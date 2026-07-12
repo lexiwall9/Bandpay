@@ -1,13 +1,25 @@
 package com.example.ui.viewmodel
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.*
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.database.FirebaseDatabase
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
 // 1. Login ViewModel
-class LoginViewModel(private val repository: BandRepository) : ViewModel() {
+class LoginViewModel(
+    private val repository: BandRepository,
+    context: Context
+) : ViewModel() {
+    private val auth = FirebaseAuth.getInstance()
+    private val database = FirebaseDatabase.getInstance().reference
+    private val prefs = context.getSharedPreferences("bandpay_auth", Context.MODE_PRIVATE)
+    private val adminEmail = "admin@bandaspuno.com"
+    private val adminPassword = "admin123456"
+
     private val _email = MutableStateFlow("")
     val email = _email.asStateFlow()
 
@@ -23,6 +35,14 @@ class LoginViewModel(private val repository: BandRepository) : ViewModel() {
     private val _loginError = MutableStateFlow<String?>(null)
     val loginError = _loginError.asStateFlow()
 
+    private val _canUseBiometricLogin = MutableStateFlow(
+        auth.currentUser != null && prefs.getBoolean("biometric_login_enabled", false)
+    )
+    val canUseBiometricLogin = _canUseBiometricLogin.asStateFlow()
+
+    private val _savedLoginEmail = MutableStateFlow(prefs.getString("last_login_email", "") ?: "")
+    val savedLoginEmail = _savedLoginEmail.asStateFlow()
+
     fun onEmailChanged(value: String) {
         _email.value = value
         _loginError.value = null
@@ -37,40 +57,164 @@ class LoginViewModel(private val repository: BandRepository) : ViewModel() {
         _showFingerprintDialog.value = visible
     }
 
+    fun setLoginError(message: String?) {
+        _loginError.value = message
+    }
+
+    private fun enableBiometricForThisDevice() {
+        prefs.edit().putBoolean("biometric_login_enabled", true).apply()
+        _canUseBiometricLogin.value = true
+    }
+
+    private fun rememberLoginEmail(email: String) {
+        prefs.edit().putString("last_login_email", email).apply()
+        _savedLoginEmail.value = email
+        _email.value = email
+    }
+
     fun loginWithPassword() {
-        if (_email.value.trim().lowercase() == "admin@taskgroup.com" || _email.value.trim().lowercase() == "juan@taskgroup.com" || _email.value.trim().isEmpty()) {
-            _isLoggedIn.value = true
-        } else {
-            _loginError.value = "Usuario o contraseña incorrectos"
+        val email = _email.value.trim().ifEmpty { _savedLoginEmail.value.trim() }
+        val password = _password.value
+
+        if (email.isEmpty() || password.isEmpty()) {
+            _loginError.value = "Ingresa tu contrasena"
+            return
         }
+
+        auth.signInWithEmailAndPassword(email, password)
+            .addOnSuccessListener {
+                _loginError.value = null
+                rememberLoginEmail(email)
+                enableBiometricForThisDevice()
+                _isLoggedIn.value = true
+            }
+            .addOnFailureListener { error ->
+                if (email.equals(adminEmail, ignoreCase = true) && password == adminPassword) {
+                    createAdminAccountAndLogin()
+                } else {
+                    _loginError.value = error.localizedMessage ?: "Usuario o contrasena incorrectos"
+                }
+            }
+    }
+
+    private fun createAdminAccountAndLogin() {
+        auth.createUserWithEmailAndPassword(adminEmail, adminPassword)
+            .addOnSuccessListener { result ->
+                val uid = result.user?.uid
+                if (uid == null) {
+                    _loginError.value = "No se pudo crear la cuenta admin"
+                    return@addOnSuccessListener
+                }
+
+                val profile = mapOf(
+                    "name" to "Administrador",
+                    "email" to adminEmail,
+                    "phone" to "",
+                    "instrument" to "Admin",
+                    "role" to "admin",
+                    "biometricLoginEnabled" to false
+                )
+
+                database.child("users").child(uid).setValue(profile)
+                    .addOnSuccessListener {
+                        _loginError.value = null
+                        rememberLoginEmail(adminEmail)
+                        enableBiometricForThisDevice()
+                        _isLoggedIn.value = true
+                    }
+                    .addOnFailureListener { error ->
+                        _loginError.value = error.localizedMessage ?: "No se pudo guardar la cuenta admin en Firebase"
+                    }
+            }
+            .addOnFailureListener { error ->
+                _loginError.value = error.localizedMessage ?: "No se pudo crear la cuenta admin en Firebase"
+            }
     }
 
     fun loginWithFingerprint() {
-        _isLoggedIn.value = true
-        _showFingerprintDialog.value = false
+        if (_canUseBiometricLogin.value && auth.currentUser != null) {
+            _loginError.value = null
+            _isLoggedIn.value = true
+            _showFingerprintDialog.value = false
+        } else {
+            _loginError.value = "Primero inicia sesion con contrasena en este celular"
+        }
     }
 
-    fun registerMember(name: String, code: String, phone: String, instrument: String, onComplete: () -> Unit) {
-        viewModelScope.launch {
-            repository.addMember(
-                Member(
-                    name = name,
-                    code = code,
-                    phone = phone,
-                    instrument = instrument
-                )
-            )
-            onComplete()
+    fun registerMember(
+        name: String,
+        email: String,
+        password: String,
+        phone: String,
+        instrument: String,
+        onComplete: () -> Unit
+    ) {
+        val cleanEmail = email.trim()
+        val cleanName = name.trim()
+        val cleanPhone = phone.trim()
+
+        if (cleanName.isEmpty() || cleanEmail.isEmpty() || password.isEmpty() || cleanPhone.isEmpty()) {
+            _loginError.value = "Completa todos los datos para registrarte"
+            return
         }
+        if (password.length < 6) {
+            _loginError.value = "La contrasena debe tener al menos 6 caracteres"
+            return
+        }
+
+        auth.createUserWithEmailAndPassword(cleanEmail, password)
+            .addOnSuccessListener { result ->
+                val uid = result.user?.uid
+                if (uid == null) {
+                    _loginError.value = "No se pudo crear el usuario en Firebase"
+                    return@addOnSuccessListener
+                }
+
+                val profile = mapOf(
+                    "name" to cleanName,
+                    "email" to cleanEmail,
+                    "phone" to cleanPhone,
+                    "instrument" to instrument,
+                    "role" to "member",
+                    "biometricLoginEnabled" to false
+                )
+
+                database.child("users").child(uid).setValue(profile)
+                    .addOnSuccessListener {
+                        viewModelScope.launch {
+                            runCatching {
+                                repository.addMember(
+                                    Member(
+                                        name = cleanName,
+                                        code = password,
+                                        phone = cleanPhone,
+                                        instrument = instrument
+                                    )
+                                )
+                            }.onSuccess {
+                                _loginError.value = null
+                                rememberLoginEmail(cleanEmail)
+                                enableBiometricForThisDevice()
+                                onComplete()
+                            }.onFailure { error ->
+                                _loginError.value = error.localizedMessage ?: "No se pudo guardar el integrante en Firebase"
+                            }
+                        }
+                    }
+                    .addOnFailureListener { error ->
+                        _loginError.value = error.localizedMessage ?: "No se pudo guardar el perfil en Firebase"
+                    }
+            }
+            .addOnFailureListener { error ->
+                _loginError.value = error.localizedMessage ?: "No se pudo registrar el usuario en Firebase"
+            }
     }
 
     fun logout() {
         _isLoggedIn.value = false
-        _email.value = ""
         _password.value = ""
     }
 }
-
 // Recent Activity Data Model
 data class RecentActivity(
     val title: String,
@@ -98,18 +242,13 @@ class DashboardViewModel(private val repository: BandRepository) : ViewModel() {
         list.filter { !it.isPaid }.size
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
-    val recentActivities = flowOf(
-        listOf(
-            RecentActivity("María completó \"Revisión de Gastos\"", "Aprobación de viáticos", "hace 15 min", "check"),
-            RecentActivity("Nuevo pago registrado: Suscripción SaaS", "Mantenimiento del servidor cloud", "hace 2 horas", "payment"),
-            RecentActivity("Carlos se unió al equipo", "Instrumentista de saxofón", "Ayer, 18:30", "user")
-        )
-    ).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val recentActivities = flowOf(emptyList<RecentActivity>())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 }
 
 // 3. Commitments ViewModel
 class CommitmentsViewModel(private val repository: BandRepository) : ViewModel() {
-    private val _selectedTab = MutableStateFlow(0) // 0: Próximos, 1: Historial
+    private val _selectedTab = MutableStateFlow(0) // 0: PrÃƒÆ’Ã‚Â³ximos, 1: Historial
     val selectedTab = _selectedTab.asStateFlow()
 
     val commitments = repository.allCommitments.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -152,16 +291,19 @@ class CommitmentsViewModel(private val repository: BandRepository) : ViewModel()
         )
 
         viewModelScope.launch {
-            val id = repository.addCommitment(commitment)
-            _lastCreatedCommitment.value = commitment.copy(id = id.toInt())
-            _isCreatedSuccess.value = true
-            
-            // Reset fields
-            newTitle.value = ""
-            newDescription.value = ""
-            newDate.value = ""
-            newTime.value = ""
-            newLocation.value = ""
+            runCatching {
+                repository.addCommitment(commitment)
+            }.onSuccess { id ->
+                _lastCreatedCommitment.value = commitment.copy(id = id.toInt())
+                _isCreatedSuccess.value = true
+
+                // Reset fields
+                newTitle.value = ""
+                newDescription.value = ""
+                newDate.value = ""
+                newTime.value = ""
+                newLocation.value = ""
+            }
         }
     }
 
@@ -221,15 +363,18 @@ class MembersViewModel(private val repository: BandRepository) : ViewModel() {
         )
 
         viewModelScope.launch {
-            repository.addMember(member)
-            _lastInvitedEmail.value = "${member.name.replace(" ", "").lowercase()}@email.com"
-            _isAddedSuccess.value = true
-            
-            // Reset
-            newMemberName.value = ""
-            newMemberCode.value = ""
-            newMemberPhone.value = ""
-            newMemberInstrument.value = "Seleccionar instrumento"
+            runCatching {
+                repository.addMember(member)
+            }.onSuccess {
+                _lastInvitedEmail.value = "${member.name.replace(" ", "").lowercase()}@email.com"
+                _isAddedSuccess.value = true
+
+                // Reset
+                newMemberName.value = ""
+                newMemberCode.value = ""
+                newMemberPhone.value = ""
+                newMemberInstrument.value = "Seleccionar instrumento"
+            }
         }
     }
 
@@ -252,6 +397,10 @@ class PaymentDetailViewModel(private val repository: BandRepository) : ViewModel
     private val _attendanceList = MutableStateFlow<List<MemberAttendanceInfo>>(emptyList())
     val attendanceList = _attendanceList.asStateFlow()
 
+    val membersCount = repository.allMembers
+        .map { it.size }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
     private val _selectedTab = MutableStateFlow(0) // 0: Integrantes, 1: Pagos
     val selectedTab = _selectedTab.asStateFlow()
 
@@ -273,6 +422,7 @@ class PaymentDetailViewModel(private val repository: BandRepository) : ViewModel
             _currentCommitment.value = commitment
             
             if (commitment != null) {
+                repository.ensureAttendanceForCommitment(commitmentId)
                 // Combine members and attendance
                 combine(repository.allMembers, repository.getAttendanceForCommitment(commitmentId)) { members, attendance ->
                     attendance.mapNotNull { att ->

@@ -46,7 +46,9 @@ android {
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       signingConfig = signingConfigs.getByName("release")
     }
-    debug { signingConfig = signingConfigs.getByName("debugConfig") }
+    debug {
+      // Se eliminó la línea de signingConfig para evitar errores de compilación locales
+    }
   }
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_11
@@ -75,6 +77,7 @@ dependencies {
   implementation(platform(libs.firebase.bom))
   // implementation(libs.accompanist.permissions)
   implementation(libs.androidx.activity.compose)
+  implementation(libs.androidx.biometric)
   // implementation(libs.androidx.camera.camera2)
   // implementation(libs.androidx.camera.core)
   // implementation(libs.androidx.camera.lifecycle)
@@ -102,7 +105,8 @@ dependencies {
   // Firebase Auth with Google Sign-In requires all of the following to be uncommented together.
   // If you are using Firebase Auth with other providers (e.g. Email/Password), you may only need
   // firebase-auth.
-  // implementation(libs.firebase.auth)
+  implementation(libs.firebase.auth)
+  implementation(libs.firebase.database)
   // implementation(libs.androidx.credentials)
   // implementation(libs.androidx.credentials.play.services)
   // implementation(libs.googleid)

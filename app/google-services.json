@@ -1,0 +1,40 @@
+{
+  "project_info": {
+    "project_number": "511278897783",
+    "firebase_url": "https://bandaspuno-default-rtdb.firebaseio.com",
+    "project_id": "bandaspuno",
+    "storage_bucket": "bandaspuno.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:511278897783:android:3466ff530307a1cd8a0472",
+        "android_client_info": {
+          "package_name": "com.aistudio.pagosbandas.ptnyws"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "511278897783-bqgn9ft23hb04sjt2d28k1olgvhsa9hc.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBQiuGx6zry-ZGucKI1WZRoYE5ksks9pqI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "511278897783-bqgn9ft23hb04sjt2d28k1olgvhsa9hc.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

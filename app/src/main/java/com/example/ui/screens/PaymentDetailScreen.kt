@@ -48,6 +48,7 @@ fun PaymentDetailScreen(
     val selectedTab by viewModel.selectedTab.collectAsStateWithLifecycle()
     val totalPaid by viewModel.totalPaid.collectAsStateWithLifecycle()
     val totalPending by viewModel.totalPending.collectAsStateWithLifecycle()
+    val membersCount by viewModel.membersCount.collectAsStateWithLifecycle()
 
     var showEditAmountDialog by remember { mutableStateOf<Int?>(null) } // holds memberId
     var editAmountValue by remember { mutableStateOf("") }
@@ -238,7 +239,17 @@ fun PaymentDetailScreen(
                     Box(modifier = Modifier.weight(1f)) {
                         if (attendanceList.isEmpty()) {
                             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                CircularProgressIndicator(color = BrandPurple)
+                                if (membersCount == 0) {
+                                    Text(
+                                        text = "Primero registra integrantes para este evento.",
+                                        color = TextGray,
+                                        fontSize = 14.sp,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.padding(24.dp)
+                                    )
+                                } else {
+                                    CircularProgressIndicator(color = BrandPurple)
+                                }
                             }
                         } else {
                             Column(modifier = Modifier.fillMaxSize()) {
@@ -329,7 +340,17 @@ fun PaymentDetailScreen(
                     Box(modifier = Modifier.weight(1f)) {
                         if (attendanceList.isEmpty()) {
                             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                CircularProgressIndicator(color = BrandPurple)
+                                if (membersCount == 0) {
+                                    Text(
+                                        text = "Primero registra integrantes para calcular pagos.",
+                                        color = TextGray,
+                                        fontSize = 14.sp,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.padding(24.dp)
+                                    )
+                                } else {
+                                    CircularProgressIndicator(color = BrandPurple)
+                                }
                             }
                         } else {
                             Column(modifier = Modifier.fillMaxSize()) {
