@@ -96,7 +96,7 @@ fun SplashScreen(modifier: Modifier = Modifier) {
             Spacer(modifier = Modifier.height(28.dp))
 
             Text(
-                text = "Bandpay",
+                text = "BandPay",
                 color = Color.White,
                 fontSize = 38.sp,
                 fontWeight = FontWeight.ExtraBold,

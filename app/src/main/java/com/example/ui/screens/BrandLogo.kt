@@ -30,7 +30,7 @@ fun BandpayLogo(
     ) {
         Icon(
             imageVector = Icons.Default.MusicNote,
-            contentDescription = "Bandpay",
+            contentDescription = "BandPay",
             tint = Color.White,
             modifier = Modifier.size(size * 0.54f)
         )
