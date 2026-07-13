@@ -6,7 +6,9 @@ import androidx.activity.enableEdgeToEdge
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG
 import androidx.biometric.BiometricPrompt
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Dashboard
@@ -39,6 +41,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.border
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 
 class MainActivity : FragmentActivity() {
     private lateinit var database: AppDatabase
@@ -62,6 +66,7 @@ class MainActivity : FragmentActivity() {
                     modelClass.isAssignableFrom(CommitmentsViewModel::class.java) -> CommitmentsViewModel(repository) as T
                     modelClass.isAssignableFrom(MembersViewModel::class.java) -> MembersViewModel(repository) as T
                     modelClass.isAssignableFrom(PaymentDetailViewModel::class.java) -> PaymentDetailViewModel(repository) as T
+                    modelClass.isAssignableFrom(ProfileViewModel::class.java) -> ProfileViewModel(applicationContext) as T
                     else -> throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
                 }
             }
@@ -77,6 +82,7 @@ class MainActivity : FragmentActivity() {
                 val commitmentsViewModel: CommitmentsViewModel = viewModel(factory = factory)
                 val membersViewModel: MembersViewModel = viewModel(factory = factory)
                 val paymentDetailViewModel: PaymentDetailViewModel = viewModel(factory = factory)
+                val profileViewModel: ProfileViewModel = viewModel(factory = factory)
 
                 NavHost(
                     navController = navController,
@@ -108,6 +114,7 @@ class MainActivity : FragmentActivity() {
                             dashboardViewModel = dashboardViewModel,
                             commitmentsViewModel = commitmentsViewModel,
                             membersViewModel = membersViewModel,
+                            profileViewModel = profileViewModel,
                             onLogout = {
                                 loginViewModel.logout()
                                 navController.navigate("login") {
@@ -205,11 +212,18 @@ fun MainAppShell(
     dashboardViewModel: DashboardViewModel,
     commitmentsViewModel: CommitmentsViewModel,
     membersViewModel: MembersViewModel,
+    profileViewModel: ProfileViewModel,
     onLogout: () -> Unit
 ) {
     val shellNavController = rememberNavController()
     val navBackStackEntry by shellNavController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route ?: "dashboard"
+    val profile by profileViewModel.profile.collectAsState()
+    var showProfileDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        profileViewModel.refresh()
+    }
 
     val items = listOf(
         NavigationItem("dashboard", "Inicio", Icons.Default.Dashboard),
@@ -242,6 +256,7 @@ fun MainAppShell(
                             indicatorColor = BrandPurpleLight
                         ),
                         onClick = {
+                            showProfileDialog = false
                             if (currentRoute != item.route) {
                                 shellNavController.navigate(item.route) {
                                     popUpTo(shellNavController.graph.startDestinationId) {
@@ -266,15 +281,14 @@ fun MainAppShell(
             composable("dashboard") {
                 DashboardScreen(
                     viewModel = dashboardViewModel,
+                    userName = profile.name,
                     onNavigateToCommitments = {
                         shellNavController.navigate("commitments") {
                             launchSingleTop = true
                         }
                     },
-                    onNavigateToMembers = {
-                        shellNavController.navigate("members") {
-                            launchSingleTop = true
-                        }
+                    onNavigateToProfile = {
+                        showProfileDialog = true
                     }
                 )
             }
@@ -291,6 +305,31 @@ fun MainAppShell(
                 MembersScreen(
                     viewModel = membersViewModel
                 )
+            }
+        }
+
+        if (showProfileDialog) {
+            Dialog(
+                onDismissRequest = { showProfileDialog = false },
+                properties = DialogProperties(usePlatformDefaultWidth = false)
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                        .heightIn(max = 720.dp),
+                    shape = RoundedCornerShape(22.dp),
+                    color = BackgroundLight
+                ) {
+                    ProfileScreen(
+                        viewModel = profileViewModel,
+                        onClose = { showProfileDialog = false },
+                        onLogout = {
+                            showProfileDialog = false
+                            onLogout()
+                        }
+                    )
+                }
             }
         }
     }

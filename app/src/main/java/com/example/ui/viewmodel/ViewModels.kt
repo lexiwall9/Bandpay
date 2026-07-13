@@ -6,6 +6,9 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.*
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.database.DataSnapshot
+import com.google.firebase.database.DatabaseError
+import com.google.firebase.database.ValueEventListener
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -211,8 +214,137 @@ class LoginViewModel(
     }
 
     fun logout() {
+        auth.signOut()
         _isLoggedIn.value = false
         _password.value = ""
+    }
+}
+
+data class UserProfileUi(
+    val name: String = "Juan",
+    val email: String = "",
+    val phone: String = "",
+    val instrument: String = "",
+    val role: String = "Integrante",
+    val photoUrl: String = "",
+    val bandName: String = "Banda Musical de Puno",
+    val currency: String = "S/ PEN"
+)
+
+class ProfileViewModel(context: Context) : ViewModel() {
+    private val auth = FirebaseAuth.getInstance()
+    private val database = FirebaseDatabase.getInstance().reference
+    private val prefs = context.getSharedPreferences("bandpay_settings", Context.MODE_PRIVATE)
+
+    private val _profile = MutableStateFlow(
+        UserProfileUi(
+            email = auth.currentUser?.email.orEmpty(),
+            bandName = prefs.getString("band_name", "Banda Musical de Puno") ?: "Banda Musical de Puno",
+            currency = prefs.getString("currency", "S/ PEN") ?: "S/ PEN"
+        )
+    )
+    val profile = _profile.asStateFlow()
+
+    private val _saveMessage = MutableStateFlow<String?>(null)
+    val saveMessage = _saveMessage.asStateFlow()
+
+    private var userListener: ValueEventListener? = null
+    private var observedUserId: String? = null
+
+    init {
+        observeUserProfile()
+    }
+
+    override fun onCleared() {
+        val uid = observedUserId
+        val listener = userListener
+        if (uid != null && listener != null) {
+            database.child("users").child(uid).removeEventListener(listener)
+        }
+        super.onCleared()
+    }
+
+    fun onNameChanged(value: String) = updateProfile { it.copy(name = value) }
+    fun onPhoneChanged(value: String) = updateProfile { it.copy(phone = value) }
+    fun onInstrumentChanged(value: String) = updateProfile { it.copy(instrument = value) }
+    fun onBandNameChanged(value: String) = updateProfile { it.copy(bandName = value) }
+    fun onCurrencyChanged(value: String) = updateProfile { it.copy(currency = value) }
+    fun onPhotoUrlChanged(value: String) = updateProfile { it.copy(photoUrl = value) }
+
+    fun refresh() {
+        observeUserProfile()
+    }
+
+    fun clearSaveMessage() {
+        _saveMessage.value = null
+    }
+
+    fun saveProfile() {
+        val current = _profile.value
+        prefs.edit()
+            .putString("band_name", current.bandName)
+            .putString("currency", current.currency)
+            .apply()
+
+        val uid = auth.currentUser?.uid
+        if (uid == null) {
+            _saveMessage.value = "Configuracion guardada en este dispositivo"
+            return
+        }
+
+        val updates = mapOf(
+            "name" to current.name.trim(),
+            "email" to current.email,
+            "phone" to current.phone.trim(),
+            "instrument" to current.instrument.trim(),
+            "role" to current.role.lowercase(),
+            "photoUrl" to current.photoUrl.trim()
+        )
+
+        database.child("users").child(uid).updateChildren(updates)
+            .addOnSuccessListener {
+                _saveMessage.value = "Perfil actualizado"
+            }
+            .addOnFailureListener { error ->
+                _saveMessage.value = error.localizedMessage ?: "No se pudo guardar el perfil"
+            }
+    }
+
+    private fun observeUserProfile() {
+        val uid = auth.currentUser?.uid ?: return
+        userListener?.let { listener ->
+            observedUserId?.let { oldUid ->
+                database.child("users").child(oldUid).removeEventListener(listener)
+            }
+        }
+        val ref = database.child("users").child(uid)
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val current = _profile.value
+                _profile.value = current.copy(
+                    name = snapshot.child("name").getValue(String::class.java)?.ifBlank { current.name } ?: current.name,
+                    email = snapshot.child("email").getValue(String::class.java)?.ifBlank { current.email }
+                        ?: auth.currentUser?.email.orEmpty(),
+                    phone = snapshot.child("phone").getValue(String::class.java).orEmpty(),
+                    instrument = snapshot.child("instrument").getValue(String::class.java).orEmpty(),
+                    role = snapshot.child("role").getValue(String::class.java)?.replaceFirstChar { it.uppercase() }
+                        ?: current.role,
+                    photoUrl = snapshot.child("photoUrl").getValue(String::class.java).orEmpty()
+                )
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                _saveMessage.value = error.message
+            }
+        }
+        ref.addValueEventListener(listener)
+        userListener = listener
+        observedUserId = uid
+    }
+
+    private fun updateProfile(transform: (UserProfileUi) -> UserProfileUi) {
+        _profile.value = transform(_profile.value)
+        _saveMessage.value = null
     }
 }
 // Recent Activity Data Model
