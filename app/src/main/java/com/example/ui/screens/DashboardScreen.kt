@@ -86,7 +86,8 @@ fun DashboardScreen(
                     modifier = Modifier
                         .size(40.dp)
                         .background(BrandPurple, CircleShape)
-                        .clickable { onNavigateToProfile() },
+                        .clickable { onNavigateToProfile() }
+                        .testTag("user_avatar"),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(

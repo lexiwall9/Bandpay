@@ -43,6 +43,7 @@ import androidx.compose.foundation.border
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import kotlinx.coroutines.delay
 
 class MainActivity : FragmentActivity() {
     private lateinit var database: AppDatabase
@@ -86,9 +87,19 @@ class MainActivity : FragmentActivity() {
 
                 NavHost(
                     navController = navController,
-                    startDestination = "login",
+                    startDestination = "splash",
                     modifier = Modifier.fillMaxSize()
                 ) {
+                    composable("splash") {
+                        LaunchedEffect(Unit) {
+                            delay(2300)
+                            navController.navigate("login") {
+                                popUpTo("splash") { inclusive = true }
+                            }
+                        }
+                        SplashScreen()
+                    }
+
                     // Login view destination
                     composable("login") {
                         LoginScreen(

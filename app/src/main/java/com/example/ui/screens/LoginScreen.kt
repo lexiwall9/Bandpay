@@ -357,14 +357,7 @@ private fun PasswordLogin(
         verticalArrangement = Arrangement.Center
     ) {
         Spacer(modifier = Modifier.height(40.dp))
-        Box(
-            modifier = Modifier
-                .size(90.dp)
-                .background(BrandPurpleLight, CircleShape),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(Icons.Default.MusicNote, contentDescription = "Band Logo", tint = BrandPurple, modifier = Modifier.size(50.dp))
-        }
+        BandpayLogo(size = 90.dp)
         Spacer(modifier = Modifier.height(24.dp))
         Text(if (hasSavedEmail) "Hola de nuevo" else "Iniciar sesion", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = TextDark, textAlign = TextAlign.Center)
         Spacer(modifier = Modifier.height(8.dp))
