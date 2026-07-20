@@ -63,8 +63,10 @@ fun MembersScreen(
         when (screenState) {
             "list" -> {
                 Scaffold(
+                    contentWindowInsets = WindowInsets(0.dp),
                     topBar = {
                         TopAppBar(
+                            windowInsets = WindowInsets.statusBars,
                             title = {
                                 Column {
                                     Text("Lista de integrantes", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextDark)
@@ -181,8 +183,10 @@ fun MembersScreen(
                 val instrumentsList = listOf("Tarola", "Trompeta", "Barítono", "Platillo", "Clarinete", "Saxofón", "Otros")
 
                 Scaffold(
+                    contentWindowInsets = WindowInsets(0.dp),
                     topBar = {
                         TopAppBar(
+                            windowInsets = WindowInsets.statusBars,
                             title = {
                                 Text("AGREGAR INTEGRANTE", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextDark)
                             },

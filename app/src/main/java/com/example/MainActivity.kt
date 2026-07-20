@@ -6,16 +6,29 @@ import androidx.activity.enableEdgeToEdge
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG
 import androidx.biometric.BiometricPrompt
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.EventNote
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
@@ -38,6 +51,7 @@ import com.example.ui.theme.*
 import com.example.ui.viewmodel.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.border
 import androidx.compose.ui.text.font.FontWeight
@@ -243,43 +257,49 @@ fun MainAppShell(
     )
 
     Scaffold(
+        contentWindowInsets = WindowInsets(0.dp),
         bottomBar = {
-            NavigationBar(
-                containerColor = Color.White,
-                tonalElevation = 4.dp,
+            Box(
                 modifier = Modifier
-                    .padding(start = 16.dp, end = 16.dp, bottom = 12.dp)
-                    .clip(RoundedCornerShape(20.dp))
-                    .border(1.dp, BrandPurpleLight, RoundedCornerShape(20.dp))
-                    .testTag("bottom_nav_bar")
+                    .fillMaxWidth()
+                    .height(86.dp)
+                    .testTag("bottom_nav_bar"),
+                contentAlignment = Alignment.BottomCenter
             ) {
-                items.forEach { item ->
-                    val isSelected = currentRoute == item.route
-                    NavigationBarItem(
-                        icon = { Icon(item.icon, contentDescription = item.title) },
-                        label = { Text(item.title, fontSize = 12.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium) },
-                        selected = isSelected,
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = BrandPurple,
-                            selectedTextColor = BrandPurple,
-                            unselectedIconColor = TextGray,
-                            unselectedTextColor = TextGray,
-                            indicatorColor = BrandPurpleLight
-                        ),
-                        onClick = {
-                            showProfileDialog = false
-                            if (currentRoute != item.route) {
-                                shellNavController.navigate(item.route) {
-                                    popUpTo(shellNavController.graph.startDestinationId) {
-                                        saveState = true
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(58.dp)
+                        .clip(RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp))
+                        .background(BrandPurple)
+                )
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(86.dp)
+                        .padding(horizontal = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceAround,
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    items.forEach { item ->
+                        BottomNavBubbleItem(
+                            item = item,
+                            selected = currentRoute == item.route,
+                            onClick = {
+                                showProfileDialog = false
+                                if (currentRoute != item.route) {
+                                    shellNavController.navigate(item.route) {
+                                        popUpTo(shellNavController.graph.startDestinationId) {
+                                            saveState = true
+                                        }
+                                        launchSingleTop = true
+                                        restoreState = true
                                     }
-                                    launchSingleTop = true
-                                    restoreState = true
                                 }
                             }
-                        },
-                        modifier = Modifier.testTag("nav_tab_${item.route}")
-                    )
+                        )
+                    }
                 }
             }
         }
@@ -351,6 +371,72 @@ data class NavigationItem(
     val title: String,
     val icon: androidx.compose.ui.graphics.vector.ImageVector
 )
+
+@Composable
+private fun RowScope.BottomNavBubbleItem(
+    item: NavigationItem,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .weight(1f)
+            .fillMaxHeight()
+            .clickable { onClick() }
+            .testTag("nav_tab_${item.route}"),
+        contentAlignment = Alignment.BottomCenter
+    ) {
+        if (selected) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Bottom,
+                modifier = Modifier.padding(bottom = 8.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .offset(y = (-16).dp)
+                        .size(58.dp)
+                        .background(Color.White, CircleShape)
+                        .border(3.dp, BrandPurpleLight, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = item.icon,
+                        contentDescription = item.title,
+                        tint = BrandPurple,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+                Text(
+                    text = item.title,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    modifier = Modifier.offset(y = (-10).dp)
+                )
+            }
+        } else {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Bottom,
+                modifier = Modifier.padding(bottom = 12.dp)
+            ) {
+                Icon(
+                    imageVector = item.icon,
+                    contentDescription = item.title,
+                    tint = Color.White.copy(alpha = 0.85f),
+                    modifier = Modifier.size(24.dp)
+                )
+                Text(
+                    text = item.title,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White.copy(alpha = 0.85f)
+                )
+            }
+        }
+    }
+}
 
 @Composable
 fun Greeting(name: String, modifier: Modifier = Modifier) {

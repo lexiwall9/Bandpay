@@ -19,11 +19,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Backspace
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.outlined.Email
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Person
@@ -49,7 +47,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
@@ -61,7 +58,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.ui.theme.AccentGreen
 import com.example.ui.theme.BrandPurple
 import com.example.ui.theme.BrandPurpleLight
 import com.example.ui.theme.TextDark
@@ -83,11 +79,9 @@ fun LoginScreen(
     val canUseBiometricLogin by viewModel.canUseBiometricLogin.collectAsStateWithLifecycle()
     val savedLoginEmail by viewModel.savedLoginEmail.collectAsStateWithLifecycle()
 
-    var isKeypadMode by remember { mutableStateOf(false) }
     var isRegisterMode by remember { mutableStateOf(false) }
     var isRegisterSuccess by remember { mutableStateOf(false) }
     var passwordVisible by remember { mutableStateOf(false) }
-    var pinValue by remember { mutableStateOf("") }
     var autoBiometricPromptShown by remember { mutableStateOf(false) }
 
     var regName by remember { mutableStateOf("") }
@@ -102,12 +96,11 @@ fun LoginScreen(
         if (isLoggedIn) onLoginSuccess()
     }
 
-    LaunchedEffect(canUseBiometricLogin, savedLoginEmail, isRegisterMode, isKeypadMode) {
+    LaunchedEffect(canUseBiometricLogin, savedLoginEmail, isRegisterMode) {
         if (
             canUseBiometricLogin &&
             savedLoginEmail.isNotBlank() &&
             !isRegisterMode &&
-            !isKeypadMode &&
             !autoBiometricPromptShown
         ) {
             autoBiometricPromptShown = true
@@ -161,7 +154,7 @@ fun LoginScreen(
                     }
                 }
             )
-            !isKeypadMode -> PasswordLogin(
+            else -> PasswordLogin(
                 email = email,
                 savedEmail = savedLoginEmail,
                 password = password,
@@ -171,20 +164,9 @@ fun LoginScreen(
                 onEmailChange = viewModel::onEmailChanged,
                 onPasswordChange = viewModel::onPasswordChanged,
                 onTogglePasswordVisibility = { passwordVisible = !passwordVisible },
+                onBiometricLogin = onBiometricLoginRequested,
                 onPasswordLogin = viewModel::loginWithPassword,
-                onBiometricMode = { isKeypadMode = true },
                 onRegister = { isRegisterMode = true }
-            )
-            else -> BiometricLogin(
-                pinValue = pinValue,
-                loginError = loginError,
-                onBack = { isKeypadMode = false },
-                onBiometricLoginRequested = onBiometricLoginRequested,
-                onPinChanged = { pinValue = it },
-                onPinUnavailable = {
-                    viewModel.setLoginError("El PIN rapido aun no esta configurado")
-                    pinValue = ""
-                }
             )
         }
     }
@@ -343,8 +325,8 @@ private fun PasswordLogin(
     onEmailChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
     onTogglePasswordVisibility: () -> Unit,
+    onBiometricLogin: () -> Unit,
     onPasswordLogin: () -> Unit,
-    onBiometricMode: () -> Unit,
     onRegister: () -> Unit
 ) {
     val hasSavedEmail = savedEmail.isNotBlank()
@@ -362,7 +344,7 @@ private fun PasswordLogin(
         Text(if (hasSavedEmail) "Hola de nuevo" else "Iniciar sesion", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = TextDark, textAlign = TextAlign.Center)
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            if (hasSavedEmail) "Ingresa tu contrasena o usa tu huella." else "Ingresa por primera vez con tu correo.",
+            if (hasSavedEmail) "Cancela la huella si prefieres ingresar tu contrasena." else "Ingresa por primera vez con tu correo.",
             fontSize = 15.sp,
             color = TextGray,
             textAlign = TextAlign.Center,
@@ -394,7 +376,27 @@ private fun PasswordLogin(
             }
         )
         ErrorText(loginError)
-        Spacer(modifier = Modifier.height(32.dp))
+        if (hasSavedEmail && canUseBiometricLogin) {
+            Spacer(modifier = Modifier.height(24.dp))
+            Box(
+                modifier = Modifier
+                    .size(62.dp)
+                    .background(BrandPurpleLight, CircleShape)
+                    .clickable { onBiometricLogin() }
+                    .testTag("biometric_retry_button"),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Fingerprint,
+                    contentDescription = "Abrir huella",
+                    tint = BrandPurple,
+                    modifier = Modifier.size(34.dp)
+                )
+            }
+            Spacer(modifier = Modifier.height(18.dp))
+        } else {
+            Spacer(modifier = Modifier.height(32.dp))
+        }
         Button(
             onClick = onPasswordLogin,
             modifier = Modifier
@@ -406,18 +408,6 @@ private fun PasswordLogin(
         ) {
             Text("Ingresar", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
         }
-        if (canUseBiometricLogin) {
-            Spacer(modifier = Modifier.height(24.dp))
-            Text(
-                "Usar huella",
-                color = BrandPurple,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier
-                    .clickable { onBiometricMode() }
-                    .padding(8.dp)
-            )
-        }
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             "Registrarse",
@@ -428,117 +418,6 @@ private fun PasswordLogin(
                 .clickable { onRegister() }
                 .padding(8.dp)
         )
-    }
-}
-
-@Composable
-private fun BiometricLogin(
-    pinValue: String,
-    loginError: String?,
-    onBack: () -> Unit,
-    onBiometricLoginRequested: () -> Unit,
-    onPinChanged: (String) -> Unit,
-    onPinUnavailable: () -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.SpaceBetween
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "Regresar", tint = BrandPurple)
-            }
-            Text("Ayuda", color = TextGray, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-        }
-
-        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
-            Box(
-                modifier = Modifier
-                    .size(100.dp)
-                    .clip(CircleShape)
-                    .background(BrandPurpleLight)
-                    .clickable { onBiometricLoginRequested() },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(Icons.Default.Person, contentDescription = "Avatar", tint = BrandPurple, modifier = Modifier.size(50.dp))
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .size(24.dp)
-                        .background(AccentGreen, CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
-                }
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-            Text("Usa tu huella", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = TextDark)
-            Spacer(modifier = Modifier.height(6.dp))
-            Text("Tambien puedes usar PIN rapido", fontSize = 14.sp, color = TextGray)
-            ErrorText(loginError)
-            Spacer(modifier = Modifier.height(24.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                for (i in 1..5) {
-                    Box(
-                        modifier = Modifier
-                            .size(14.dp)
-                            .background(
-                                color = if (pinValue.length >= i) BrandPurple else BrandPurple.copy(alpha = 0.2f),
-                                shape = CircleShape
-                            )
-                    )
-                }
-            }
-        }
-
-        Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            val keys = listOf(
-                listOf("1", "2", "3"),
-                listOf("4", "5", "6"),
-                listOf("7", "8", "9"),
-                listOf("fingerprint", "0", "backspace")
-            )
-            keys.forEach { row ->
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-                    row.forEach { key ->
-                        Box(
-                            modifier = Modifier
-                                .size(64.dp)
-                                .clip(CircleShape)
-                                .clickable {
-                                    when (key) {
-                                        "backspace" -> if (pinValue.isNotEmpty()) onPinChanged(pinValue.dropLast(1))
-                                        "fingerprint" -> onBiometricLoginRequested()
-                                        else -> {
-                                            val newPin = pinValue + key
-                                            onPinChanged(newPin.take(5))
-                                            if (newPin.length >= 5) onPinUnavailable()
-                                        }
-                                    }
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            when (key) {
-                                "backspace" -> Icon(Icons.Default.Backspace, contentDescription = "Borrar", tint = BrandPurple)
-                                "fingerprint" -> Icon(Icons.Default.Fingerprint, contentDescription = "Huella", tint = BrandPurple, modifier = Modifier.size(32.dp))
-                                else -> Text(key, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = TextDark)
-                            }
-                        }
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-            Text("Volver", fontSize = 13.sp, color = TextGray, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().clickable { onBack() })
-        }
     }
 }
 

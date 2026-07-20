@@ -64,8 +64,10 @@ fun CommitmentsScreen(
         when (screenState) {
             "list" -> {
                 Scaffold(
+                    contentWindowInsets = WindowInsets(0.dp),
                     topBar = {
                         TopAppBar(
+                            windowInsets = WindowInsets.statusBars,
                             title = {
                                 Column {
                                     Text("Compromisos", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextDark)
@@ -202,8 +204,10 @@ fun CommitmentsScreen(
                 val newLocation by viewModel.newLocation.collectAsStateWithLifecycle()
 
                 Scaffold(
+                    contentWindowInsets = WindowInsets(0.dp),
                     topBar = {
                         TopAppBar(
+                            windowInsets = WindowInsets.statusBars,
                             title = {
                                 Text("NUEVO COMPROMISO", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextDark)
                             },
