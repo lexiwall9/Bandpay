@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -24,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -33,6 +36,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.Commitment
 import com.example.ui.theme.*
 import com.example.ui.viewmodel.CommitmentsViewModel
+import java.util.Calendar
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -202,6 +207,44 @@ fun CommitmentsScreen(
                 val newDate by viewModel.newDate.collectAsStateWithLifecycle()
                 val newTime by viewModel.newTime.collectAsStateWithLifecycle()
                 val newLocation by viewModel.newLocation.collectAsStateWithLifecycle()
+                val context = LocalContext.current
+
+                fun showDatePicker() {
+                    val calendar = selectedDateCalendar(newDate)
+                    DatePickerDialog(
+                        context,
+                        { _, year, month, dayOfMonth ->
+                            viewModel.newDate.value = String.format(
+                                Locale.getDefault(),
+                                "%02d/%02d/%04d",
+                                dayOfMonth,
+                                month + 1,
+                                year
+                            )
+                        },
+                        calendar.get(Calendar.YEAR),
+                        calendar.get(Calendar.MONTH),
+                        calendar.get(Calendar.DAY_OF_MONTH)
+                    ).show()
+                }
+
+                fun showTimePicker() {
+                    val calendar = selectedTimeCalendar(newTime)
+                    TimePickerDialog(
+                        context,
+                        { _, hourOfDay, minute ->
+                            viewModel.newTime.value = String.format(
+                                Locale.getDefault(),
+                                "%02d:%02d",
+                                hourOfDay,
+                                minute
+                            )
+                        },
+                        calendar.get(Calendar.HOUR_OF_DAY),
+                        calendar.get(Calendar.MINUTE),
+                        true
+                    ).show()
+                }
 
                 Scaffold(
                     contentWindowInsets = WindowInsets(0.dp),
@@ -281,46 +324,26 @@ fun CommitmentsScreen(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            OutlinedTextField(
+                            PickerOutlinedField(
                                 value = newDate,
-                                onValueChange = { viewModel.newDate.value = it },
-                                label = { Text("Fecha") },
-                                placeholder = { Text("mm/dd/yyyy") },
-                                leadingIcon = { Icon(Icons.Outlined.CalendarToday, contentDescription = null, tint = BrandPurple) },
+                                label = "Fecha",
+                                placeholder = "Seleccionar",
+                                icon = { Icon(Icons.Outlined.CalendarToday, contentDescription = null, tint = BrandPurple) },
+                                onClick = { showDatePicker() },
                                 modifier = Modifier
                                     .weight(1.5f)
-                                    .testTag("commitment_date_input"),
-                                shape = RoundedCornerShape(12.dp),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = BrandPurple,
-                                    unfocusedBorderColor = Color(0xFFE5E7EB),
-                                    focusedLabelColor = BrandPurple,
-                                    unfocusedLabelColor = TextGray,
-                                    focusedContainerColor = Color.White,
-                                    unfocusedContainerColor = Color.White
-                                ),
-                                singleLine = true
+                                    .testTag("commitment_date_input")
                             )
 
-                            OutlinedTextField(
+                            PickerOutlinedField(
                                 value = newTime,
-                                onValueChange = { viewModel.newTime.value = it },
-                                label = { Text("Hora") },
-                                placeholder = { Text("--:--") },
-                                leadingIcon = { Icon(Icons.Outlined.Schedule, contentDescription = null, tint = BrandPurple) },
+                                label = "Hora",
+                                placeholder = "Seleccionar",
+                                icon = { Icon(Icons.Outlined.Schedule, contentDescription = null, tint = BrandPurple) },
+                                onClick = { showTimePicker() },
                                 modifier = Modifier
                                     .weight(1f)
-                                    .testTag("commitment_time_input"),
-                                shape = RoundedCornerShape(12.dp),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = BrandPurple,
-                                    unfocusedBorderColor = Color(0xFFE5E7EB),
-                                    focusedLabelColor = BrandPurple,
-                                    unfocusedLabelColor = TextGray,
-                                    focusedContainerColor = Color.White,
-                                    unfocusedContainerColor = Color.White
-                                ),
-                                singleLine = true
+                                    .testTag("commitment_time_input")
                             )
                         }
 
@@ -697,6 +720,73 @@ fun CommitmentRow(
             }
         }
     }
+}
+
+@Composable
+private fun PickerOutlinedField(
+    value: String,
+    label: String,
+    placeholder: String,
+    icon: @Composable () -> Unit,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(modifier = modifier) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = {},
+            label = { Text(label) },
+            placeholder = { Text(placeholder) },
+            leadingIcon = icon,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = false,
+            shape = RoundedCornerShape(12.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                disabledBorderColor = Color(0xFFE5E7EB),
+                disabledLabelColor = TextGray,
+                disabledPlaceholderColor = TextGray,
+                disabledLeadingIconColor = BrandPurple,
+                disabledTextColor = TextDark,
+                disabledContainerColor = Color.White
+            ),
+            singleLine = true
+        )
+
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .clip(RoundedCornerShape(12.dp))
+                .clickable(onClick = onClick)
+        )
+    }
+}
+
+private fun selectedDateCalendar(date: String): Calendar {
+    val calendar = Calendar.getInstance()
+    val parts = date.split("/")
+    if (parts.size == 3) {
+        val day = parts[0].toIntOrNull()
+        val month = parts[1].toIntOrNull()
+        val year = parts[2].toIntOrNull()
+        if (day != null && month != null && year != null) {
+            calendar.set(year, month - 1, day)
+        }
+    }
+    return calendar
+}
+
+private fun selectedTimeCalendar(time: String): Calendar {
+    val calendar = Calendar.getInstance()
+    val parts = time.split(":")
+    if (parts.size == 2) {
+        val hour = parts[0].toIntOrNull()
+        val minute = parts[1].toIntOrNull()
+        if (hour != null && minute != null) {
+            calendar.set(Calendar.HOUR_OF_DAY, hour)
+            calendar.set(Calendar.MINUTE, minute)
+        }
+    }
+    return calendar
 }
 
 @Composable
