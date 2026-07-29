@@ -46,6 +46,7 @@ fun MembersScreen(
     val filteredMembers by viewModel.filteredMembers.collectAsStateWithLifecycle()
     val isAddedSuccess by viewModel.isAddedSuccess.collectAsStateWithLifecycle()
     val lastInvitedEmail by viewModel.lastInvitedEmail.collectAsStateWithLifecycle()
+    val pendingRequests by viewModel.pendingRequests.collectAsStateWithLifecycle()
 
     var screenState by remember { mutableStateOf("list") } // "list", "add"
 
@@ -93,6 +94,40 @@ fun MembersScreen(
                             .fillMaxSize()
                             .padding(innerPadding)
                     ) {
+                        pendingRequests.firstOrNull()?.let { request ->
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF7ED)),
+                                shape = RoundedCornerShape(14.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Text(
+                                        "Solicitud pendiente (${pendingRequests.size})",
+                                        fontWeight = FontWeight.Bold,
+                                        color = TextDark
+                                    )
+                                    Text("${request.name} · ${request.instrument}", color = TextDark, fontSize = 14.sp)
+                                    Text(request.email, color = TextGray, fontSize = 13.sp)
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        OutlinedButton(
+                                            onClick = { viewModel.rejectRegistrationRequest(request) },
+                                            modifier = Modifier.weight(1f)
+                                        ) { Text("Rechazar") }
+                                        Button(
+                                            onClick = { viewModel.approveRegistrationRequest(request) },
+                                            modifier = Modifier.weight(1f),
+                                            colors = ButtonDefaults.buttonColors(containerColor = BrandPurple)
+                                        ) { Text("Aprobar") }
+                                    }
+                                }
+                            }
+                        }
+
                         // Search Bar
                         OutlinedTextField(
                             value = searchQuery,
@@ -175,9 +210,12 @@ fun MembersScreen(
 
             "add" -> {
                 val name by viewModel.newMemberName.collectAsStateWithLifecycle()
+                val email by viewModel.newMemberEmail.collectAsStateWithLifecycle()
                 val code by viewModel.newMemberCode.collectAsStateWithLifecycle()
                 val phone by viewModel.newMemberPhone.collectAsStateWithLifecycle()
                 val instrument by viewModel.newMemberInstrument.collectAsStateWithLifecycle()
+                val accountRole by viewModel.newAccountRole.collectAsStateWithLifecycle()
+                val addError by viewModel.addError.collectAsStateWithLifecycle()
 
                 var expandedDropdown by remember { mutableStateOf(false) }
                 val instrumentsList = listOf("Tarola", "Trompeta", "Barítono", "Platillo", "Clarinete", "Saxofón", "Otros")
@@ -188,7 +226,7 @@ fun MembersScreen(
                         TopAppBar(
                             windowInsets = WindowInsets.statusBars,
                             title = {
-                                Text("AGREGAR INTEGRANTE", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextDark)
+                                Text("CREAR CUENTA", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextDark)
                             },
                             navigationIcon = {
                                 IconButton(onClick = { screenState = "list" }) {
@@ -209,10 +247,43 @@ fun MembersScreen(
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         Text(
-                            text = "Completa los datos del nuevo integrante para que pueda unirse a tu equipo de trabajo.",
+                            text = "Completa los datos y elige si la cuenta sera para un administrador o para un musico.",
                             fontSize = 14.sp,
                             color = TextGray
                         )
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color.White),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            listOf("Musico", "Admin").forEach { role ->
+                                val selected = accountRole == role
+                                Button(
+                                    onClick = { viewModel.newAccountRole.value = role },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxHeight(),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (selected) BrandPurple else Color.White,
+                                        contentColor = if (selected) Color.White else TextDark
+                                    ),
+                                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (role == "Admin") Icons.Default.AdminPanelSettings else Icons.Default.MusicNote,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(role, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
 
                         // Name field
                         OutlinedTextField(
@@ -228,12 +299,26 @@ fun MembersScreen(
                             singleLine = true
                         )
 
+                        OutlinedTextField(
+                            value = email,
+                            onValueChange = { viewModel.newMemberEmail.value = it },
+                            label = { Text("Correo") },
+                            placeholder = { Text("ejemplo@correo.com") },
+                            leadingIcon = { Icon(Icons.Outlined.Mail, contentDescription = null, tint = BrandPurple) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("member_email_input"),
+                            shape = RoundedCornerShape(12.dp),
+                            singleLine = true
+                        )
+
                         // Pin/Code field
                         OutlinedTextField(
                             value = code,
                             onValueChange = { viewModel.newMemberCode.value = it },
-                            label = { Text("Clave") },
-                            placeholder = { Text("Ingresa clave") },
+                            label = { Text("Contrasena") },
+                            placeholder = { Text("Minimo 6 caracteres") },
                             leadingIcon = { Icon(Icons.Outlined.VpnKey, contentDescription = null, tint = BrandPurple) },
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -257,40 +342,45 @@ fun MembersScreen(
                             singleLine = true
                         )
 
-                        // Instrument Selector Custom Field (DropdownMenu style)
-                        ExposedDropdownMenuBox(
-                            expanded = expandedDropdown,
-                            onExpandedChange = { expandedDropdown = !expandedDropdown },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            OutlinedTextField(
-                                value = instrument,
-                                onValueChange = {},
-                                readOnly = true,
-                                label = { Text("Instrumento") },
-                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedDropdown) },
-                                leadingIcon = { Icon(Icons.Default.MusicNote, contentDescription = null, tint = BrandPurple) },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .menuAnchor()
-                                    .testTag("member_instrument_dropdown"),
-                                shape = RoundedCornerShape(12.dp),
-                                colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors()
-                            )
-                            ExposedDropdownMenu(
+                        AnimatedVisibility(visible = accountRole == "Musico") {
+                            ExposedDropdownMenuBox(
                                 expanded = expandedDropdown,
-                                onDismissRequest = { expandedDropdown = false }
+                                onExpandedChange = { expandedDropdown = !expandedDropdown },
+                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                instrumentsList.forEach { selection ->
-                                    DropdownMenuItem(
-                                        text = { Text(selection) },
-                                        onClick = {
-                                            viewModel.newMemberInstrument.value = selection
-                                            expandedDropdown = false
-                                        }
-                                    )
+                                OutlinedTextField(
+                                    value = instrument,
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    label = { Text("Instrumento") },
+                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedDropdown) },
+                                    leadingIcon = { Icon(Icons.Default.MusicNote, contentDescription = null, tint = BrandPurple) },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .menuAnchor()
+                                        .testTag("member_instrument_dropdown"),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors()
+                                )
+                                ExposedDropdownMenu(
+                                    expanded = expandedDropdown,
+                                    onDismissRequest = { expandedDropdown = false }
+                                ) {
+                                    instrumentsList.forEach { selection ->
+                                        DropdownMenuItem(
+                                            text = { Text(selection) },
+                                            onClick = {
+                                                viewModel.newMemberInstrument.value = selection
+                                                expandedDropdown = false
+                                            }
+                                        )
+                                    }
                                 }
                             }
+                        }
+
+                        addError?.let { error ->
+                            Text(error, color = Color(0xFFB91C1C), fontSize = 13.sp)
                         }
 
                         Spacer(modifier = Modifier.height(16.dp))
@@ -298,7 +388,7 @@ fun MembersScreen(
                         // Submit Button
                         Button(
                             onClick = { viewModel.addMember() },
-                            enabled = name.isNotEmpty() && phone.isNotEmpty(),
+                            enabled = name.isNotEmpty() && email.isNotEmpty() && phone.isNotEmpty() && code.isNotEmpty(),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(50.dp)
@@ -306,7 +396,7 @@ fun MembersScreen(
                             shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = BrandPurple)
                         ) {
-                            Text("Agregar integrante", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            Text("Crear cuenta", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
                         }
                     }
                 }
@@ -354,7 +444,7 @@ fun MembersScreen(
                     Spacer(modifier = Modifier.height(32.dp))
 
                     Text(
-                        text = "¡Invitación enviada!",
+                        text = "Cuenta creada",
                         fontSize = 24.sp,
                         fontWeight = FontWeight.Bold,
                         color = TextDark,
@@ -364,7 +454,7 @@ fun MembersScreen(
                     Spacer(modifier = Modifier.height(12.dp))
 
                     Text(
-                        text = "Hemos enviado una invitación a:",
+                        text = "Se creo la cuenta para:",
                         fontSize = 14.sp,
                         color = TextGray,
                         textAlign = TextAlign.Center
@@ -383,7 +473,7 @@ fun MembersScreen(
                     Spacer(modifier = Modifier.height(16.dp))
 
                     Text(
-                        text = "El integrante recibirá un correo electrónico para unirse al grupo de trabajo y comenzar a colaborar.",
+                        text = "Ahora puede iniciar sesion con su correo y contrasena. La huella se activara despues del primer ingreso en su celular.",
                         fontSize = 14.sp,
                         color = TextGray,
                         textAlign = TextAlign.Center,

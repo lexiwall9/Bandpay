@@ -37,17 +37,23 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.*
 import com.example.ui.viewmodel.DashboardViewModel
+import coil.compose.AsyncImage
 
 @Composable
 fun DashboardScreen(
     viewModel: DashboardViewModel,
     userName: String,
+    photoUrl: String,
     onNavigateToCommitments: () -> Unit,
     onNavigateToProfile: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val upcomingCount by viewModel.upcomingCommitments.collectAsState()
     val pendingPaymentsCount by viewModel.pendingPaymentsCount.collectAsState()
+    val pendingTasksCount by viewModel.pendingTasksCount.collectAsState()
+    val completedCommitmentsCount by viewModel.completedCommitmentsCount.collectAsState()
+    val completionProgress by viewModel.completionProgress.collectAsState()
+    val nextCommitment by viewModel.nextCommitment.collectAsState()
     val activities by viewModel.recentActivities.collectAsState()
     var showNotificationsDialog by remember { mutableStateOf(false) }
 
@@ -91,12 +97,20 @@ fun DashboardScreen(
                         .testTag("user_avatar"),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Person,
-                        contentDescription = "Usuario",
-                        tint = Color.White,
-                        modifier = Modifier.size(22.dp)
-                    )
+                    if (photoUrl.isBlank()) {
+                        Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = "Usuario",
+                            tint = Color.White,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    } else {
+                        AsyncImage(
+                            model = photoUrl,
+                            contentDescription = "Foto de perfil",
+                            modifier = Modifier.fillMaxSize().clip(CircleShape)
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.width(12.dp))
@@ -147,7 +161,7 @@ fun DashboardScreen(
                 )
                 MetricCard(
                     title = "Tareas",
-                    value = "12",
+                    value = pendingTasksCount.toString(),
                     containerColor = Color(0xFFF5F3FF),
                     contentColor = Color(0xFF6D28D9),
                     modifier = Modifier.weight(1f)
@@ -178,7 +192,7 @@ fun DashboardScreen(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "65%",
+                            text = "${(completionProgress * 100).toInt()}%",
                             color = Color.White,
                             fontSize = 20.sp,
                             fontWeight = FontWeight.ExtraBold
@@ -188,7 +202,7 @@ fun DashboardScreen(
                     Spacer(modifier = Modifier.height(8.dp))
 
                     LinearProgressIndicator(
-                        progress = 0.65f,
+                        progress = completionProgress,
                         color = Color.White,
                         trackColor = Color.White.copy(alpha = 0.25f),
                         modifier = Modifier
@@ -200,7 +214,11 @@ fun DashboardScreen(
                     Spacer(modifier = Modifier.height(12.dp))
 
                     Text(
-                        text = "\u00A1Buen trabajo! Est\u00E1s por encima del promedio del grupo de Puno.",
+                        text = if (upcomingCount.isEmpty()) {
+                            "Aún no hay eventos registrados."
+                        } else {
+                            "$completedCommitmentsCount de ${upcomingCount.size + completedCommitmentsCount} eventos completados."
+                        },
                         color = Color.White.copy(alpha = 0.85f),
                         fontSize = 13.sp
                     )
@@ -221,7 +239,7 @@ fun DashboardScreen(
                     color = TextDark
                 )
                 Text(
-                    text = "Pr\u00F3xima: 14:00",
+                    text = nextCommitment?.let { "Próxima: ${it.time.ifBlank { "Sin hora" }}" } ?: "Sin próximos eventos",
                     fontSize = 13.sp,
                     color = BrandPurple,
                     fontWeight = FontWeight.SemiBold,
@@ -265,6 +283,9 @@ fun DashboardScreen(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
+                    if (activities.isEmpty()) {
+                        Text("Aún no hay actividad registrada.", color = TextGray, fontSize = 14.sp)
+                    }
                     activities.forEach { act ->
                         Row(
                             verticalAlignment = Alignment.CenterVertically,

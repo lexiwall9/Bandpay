@@ -52,6 +52,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
@@ -67,11 +68,13 @@ import com.example.ui.theme.BrandPurpleLight
 import com.example.ui.theme.TextDark
 import com.example.ui.theme.TextGray
 import com.example.ui.viewmodel.ProfileViewModel
+import coil.compose.AsyncImage
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
     viewModel: ProfileViewModel,
+    isAdmin: Boolean,
     onClose: () -> Unit,
     onLogout: () -> Unit,
     modifier: Modifier = Modifier
@@ -130,11 +133,12 @@ fun ProfileScreen(
                             color = BrandPurple
                         )
                     } else {
-                        Icon(
-                            imageVector = Icons.Default.Person,
-                            contentDescription = null,
-                            tint = BrandPurple,
-                            modifier = Modifier.size(42.dp)
+                        AsyncImage(
+                            model = profile.photoUrl,
+                            contentDescription = "Foto de perfil",
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(CircleShape)
                         )
                     }
                     Box(
@@ -195,47 +199,49 @@ fun ProfileScreen(
             testTag = "profile_photo_input"
         )
 
-        SectionTitle("Configuracion de la banda")
-        ProfileTextField(
-            value = profile.bandName,
-            onValueChange = viewModel::onBandNameChanged,
-            label = "Nombre de banda",
-            icon = Icons.Outlined.Groups,
-            testTag = "profile_band_input"
-        )
-        ExposedDropdownMenuBox(
-            expanded = currencyExpanded,
-            onExpandedChange = { currencyExpanded = !currencyExpanded }
-        ) {
-            OutlinedTextField(
-                value = profile.currency,
-                onValueChange = {},
-                readOnly = true,
-                label = { Text("Moneda") },
-                leadingIcon = { Icon(Icons.Outlined.AttachMoney, contentDescription = null, tint = BrandPurple) },
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = currencyExpanded) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .menuAnchor()
-                    .testTag("profile_currency_dropdown"),
-                shape = RoundedCornerShape(14.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = BrandPurple,
-                    unfocusedBorderColor = Color(0xFFE5E7EB)
-                )
+        if (isAdmin) {
+            SectionTitle("Configuracion de la banda")
+            ProfileTextField(
+                value = profile.bandName,
+                onValueChange = viewModel::onBandNameChanged,
+                label = "Nombre de banda",
+                icon = Icons.Outlined.Groups,
+                testTag = "profile_band_input"
             )
-            ExposedDropdownMenu(
+            ExposedDropdownMenuBox(
                 expanded = currencyExpanded,
-                onDismissRequest = { currencyExpanded = false }
+                onExpandedChange = { currencyExpanded = !currencyExpanded }
             ) {
-                currencies.forEach { currency ->
-                    DropdownMenuItem(
-                        text = { Text(currency) },
-                        onClick = {
-                            viewModel.onCurrencyChanged(currency)
-                            currencyExpanded = false
-                        }
+                OutlinedTextField(
+                    value = profile.currency,
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Moneda") },
+                    leadingIcon = { Icon(Icons.Outlined.AttachMoney, contentDescription = null, tint = BrandPurple) },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = currencyExpanded) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .menuAnchor()
+                        .testTag("profile_currency_dropdown"),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = BrandPurple,
+                        unfocusedBorderColor = Color(0xFFE5E7EB)
                     )
+                )
+                ExposedDropdownMenu(
+                    expanded = currencyExpanded,
+                    onDismissRequest = { currencyExpanded = false }
+                ) {
+                    currencies.forEach { currency ->
+                        DropdownMenuItem(
+                            text = { Text(currency) },
+                            onClick = {
+                                viewModel.onCurrencyChanged(currency)
+                                currencyExpanded = false
+                            }
+                        )
+                    }
                 }
             }
         }

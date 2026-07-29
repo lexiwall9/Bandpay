@@ -44,6 +44,7 @@ import java.util.Locale
 fun CommitmentsScreen(
     viewModel: CommitmentsViewModel,
     onNavigateToDetail: (Int) -> Unit,
+    canManageCommitments: Boolean,
     modifier: Modifier = Modifier
 ) {
     val selectedTab by viewModel.selectedTab.collectAsStateWithLifecycle()
@@ -88,13 +89,15 @@ fun CommitmentsScreen(
                         )
                     },
                     floatingActionButton = {
-                        FloatingActionButton(
-                            onClick = { screenState = "create" },
-                            containerColor = BrandPurple,
-                            contentColor = Color.White,
-                            modifier = Modifier.testTag("add_commitment_fab")
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = "Crear Compromiso")
+                        if (canManageCommitments) {
+                            FloatingActionButton(
+                                onClick = { screenState = "create" },
+                                containerColor = BrandPurple,
+                                contentColor = Color.White,
+                                modifier = Modifier.testTag("add_commitment_fab")
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = "Crear Compromiso")
+                            }
                         }
                     },
                     containerColor = BackgroundLight

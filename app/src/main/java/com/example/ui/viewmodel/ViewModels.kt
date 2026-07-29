@@ -6,9 +6,11 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.*
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.FirebaseApp
 import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.ValueEventListener
+import com.google.firebase.database.ServerValue
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -20,8 +22,9 @@ class LoginViewModel(
     private val auth = FirebaseAuth.getInstance()
     private val database = FirebaseDatabase.getInstance().reference
     private val prefs = context.getSharedPreferences("bandpay_auth", Context.MODE_PRIVATE)
-    private val adminEmail = "admin@bandaspuno.com"
-    private val adminPassword = "admin123456"
+    private val localAdminEmail = "bomarty28@gmail.com"
+    private val localAdminPassword = "bomarty"
+    private val localAdminName = "bomarty"
 
     private val _email = MutableStateFlow("")
     val email = _email.asStateFlow()
@@ -39,12 +42,20 @@ class LoginViewModel(
     val loginError = _loginError.asStateFlow()
 
     private val _canUseBiometricLogin = MutableStateFlow(
-        auth.currentUser != null && prefs.getBoolean("biometric_login_enabled", false)
+        prefs.getBoolean("biometric_login_enabled", false) &&
+                (auth.currentUser != null || prefs.getString("last_login_type", "") == "local_admin")
     )
     val canUseBiometricLogin = _canUseBiometricLogin.asStateFlow()
 
     private val _savedLoginEmail = MutableStateFlow(prefs.getString("last_login_email", "") ?: "")
     val savedLoginEmail = _savedLoginEmail.asStateFlow()
+    private val _registrationRequestStatus = MutableStateFlow<String?>(null)
+    val registrationRequestStatus = _registrationRequestStatus.asStateFlow()
+    private var isUsingAnotherAccount = false
+
+    init {
+        observeRegistrationRequest(prefs.getString("registration_request_id", null))
+    }
 
     fun onEmailChanged(value: String) {
         _email.value = value
@@ -53,6 +64,13 @@ class LoginViewModel(
 
     fun onPasswordChanged(value: String) {
         _password.value = value
+        _loginError.value = null
+    }
+
+    fun prepareForAnotherAccount() {
+        isUsingAnotherAccount = true
+        _email.value = ""
+        _password.value = ""
         _loginError.value = null
     }
 
@@ -73,14 +91,26 @@ class LoginViewModel(
         prefs.edit().putString("last_login_email", email).apply()
         _savedLoginEmail.value = email
         _email.value = email
+        isUsingAnotherAccount = false
+    }
+
+    private fun rememberLoginType(type: String) {
+        prefs.edit().putString("last_login_type", type).apply()
     }
 
     fun loginWithPassword() {
-        val email = _email.value.trim().ifEmpty { _savedLoginEmail.value.trim() }
+        val email = _email.value.trim().ifEmpty {
+            if (isUsingAnotherAccount) "" else _savedLoginEmail.value.trim()
+        }
         val password = _password.value
 
         if (email.isEmpty() || password.isEmpty()) {
-            _loginError.value = "Ingresa tu contrasena"
+            _loginError.value = "Ingresa tu correo y contrasena"
+            return
+        }
+
+        if (email.equals(localAdminEmail, ignoreCase = true) && password == localAdminPassword) {
+            loginAsLocalAdmin()
             return
         }
 
@@ -88,55 +118,33 @@ class LoginViewModel(
             .addOnSuccessListener {
                 _loginError.value = null
                 rememberLoginEmail(email)
+                rememberLoginType("firebase")
                 enableBiometricForThisDevice()
                 _isLoggedIn.value = true
             }
             .addOnFailureListener { error ->
-                if (email.equals(adminEmail, ignoreCase = true) && password == adminPassword) {
-                    createAdminAccountAndLogin()
-                } else {
-                    _loginError.value = error.localizedMessage ?: "Usuario o contrasena incorrectos"
-                }
+                _loginError.value = error.localizedMessage ?: "Usuario o contrasena incorrectos"
             }
     }
 
-    private fun createAdminAccountAndLogin() {
-        auth.createUserWithEmailAndPassword(adminEmail, adminPassword)
-            .addOnSuccessListener { result ->
-                val uid = result.user?.uid
-                if (uid == null) {
-                    _loginError.value = "No se pudo crear la cuenta admin"
-                    return@addOnSuccessListener
-                }
-
-                val profile = mapOf(
-                    "name" to "Administrador",
-                    "email" to adminEmail,
-                    "phone" to "",
-                    "instrument" to "Admin",
-                    "role" to "admin",
-                    "biometricLoginEnabled" to false
-                )
-
-                database.child("users").child(uid).setValue(profile)
-                    .addOnSuccessListener {
-                        _loginError.value = null
-                        rememberLoginEmail(adminEmail)
-                        enableBiometricForThisDevice()
-                        _isLoggedIn.value = true
-                    }
-                    .addOnFailureListener { error ->
-                        _loginError.value = error.localizedMessage ?: "No se pudo guardar la cuenta admin en Firebase"
-                    }
-            }
-            .addOnFailureListener { error ->
-                _loginError.value = error.localizedMessage ?: "No se pudo crear la cuenta admin en Firebase"
-            }
+    private fun loginAsLocalAdmin() {
+        auth.signOut()
+        _loginError.value = null
+        rememberLoginEmail(localAdminEmail)
+        rememberLoginType("local_admin")
+        enableBiometricForThisDevice()
+        _isLoggedIn.value = true
     }
 
     fun loginWithFingerprint() {
-        if (_canUseBiometricLogin.value && auth.currentUser != null) {
+        val isLocalAdmin = prefs.getString("last_login_type", "") == "local_admin" &&
+                _savedLoginEmail.value.equals(localAdminEmail, ignoreCase = true)
+        if (_canUseBiometricLogin.value && (auth.currentUser != null || isLocalAdmin)) {
             _loginError.value = null
+            if (isLocalAdmin) {
+                rememberLoginEmail(localAdminEmail)
+                rememberLoginType("local_admin")
+            }
             _isLoggedIn.value = true
             _showFingerprintDialog.value = false
         } else {
@@ -189,7 +197,7 @@ class LoginViewModel(
                                 repository.addMember(
                                     Member(
                                         name = cleanName,
-                                        code = password,
+                                        code = "Cuenta Firebase",
                                         phone = cleanPhone,
                                         instrument = instrument
                                     )
@@ -197,6 +205,7 @@ class LoginViewModel(
                             }.onSuccess {
                                 _loginError.value = null
                                 rememberLoginEmail(cleanEmail)
+                                rememberLoginType("firebase")
                                 enableBiometricForThisDevice()
                                 onComplete()
                             }.onFailure { error ->
@@ -214,11 +223,75 @@ class LoginViewModel(
     }
 
     fun logout() {
-        auth.signOut()
         _isLoggedIn.value = false
         _password.value = ""
     }
+
+    fun submitRegistrationRequest(
+        name: String,
+        email: String,
+        phone: String,
+        instrument: String,
+        onComplete: () -> Unit
+    ) {
+        if (name.isBlank() || email.isBlank() || phone.isBlank() || instrument == "Seleccionar instrumento") {
+            _loginError.value = "Completa nombre, correo, celular e instrumento"
+            return
+        }
+        val request = mapOf(
+            "name" to name.trim(), "email" to email.trim(), "phone" to phone.trim(),
+            "instrument" to instrument, "status" to "pending", "createdAt" to ServerValue.TIMESTAMP
+        )
+        val reference = database.child("registrationRequests").push()
+        reference.setValue(request)
+            .addOnSuccessListener {
+                prefs.edit()
+                    .putString("registration_request_id", reference.key)
+                    .putString("registration_name", name.trim())
+                    .putString("registration_email", email.trim())
+                    .putString("registration_phone", phone.trim())
+                    .putString("registration_instrument", instrument)
+                    .apply()
+                observeRegistrationRequest(reference.key)
+                _loginError.value = null
+                onComplete()
+            }
+            .addOnFailureListener { error ->
+                _loginError.value = error.localizedMessage ?: "No se pudo enviar la solicitud"
+            }
+    }
+
+    private fun observeRegistrationRequest(requestId: String?) {
+        if (requestId.isNullOrBlank()) return
+        database.child("registrationRequests").child(requestId)
+            .addValueEventListener(object : ValueEventListener {
+                override fun onDataChange(snapshot: DataSnapshot) {
+                    _registrationRequestStatus.value = snapshot.child("status").getValue(String::class.java)
+                }
+                override fun onCancelled(error: DatabaseError) = Unit
+            })
+    }
+
+    fun pendingRegistrationDraft() = RegistrationDraft(
+        name = prefs.getString("registration_name", "").orEmpty(),
+        email = prefs.getString("registration_email", "").orEmpty(),
+        phone = prefs.getString("registration_phone", "").orEmpty(),
+        instrument = prefs.getString("registration_instrument", "Seleccionar instrumento").orEmpty()
+    )
+
+    fun clearRegistrationRequest() {
+        prefs.edit()
+            .remove("registration_request_id")
+            .remove("registration_name")
+            .remove("registration_email")
+            .remove("registration_phone")
+            .remove("registration_instrument")
+            .apply()
+        _registrationRequestStatus.value = null
+    }
 }
+
+data class RegistrationDraft(val name: String, val email: String, val phone: String, val instrument: String)
 
 data class UserProfileUi(
     val name: String = "Juan",
@@ -235,6 +308,7 @@ class ProfileViewModel(context: Context) : ViewModel() {
     private val auth = FirebaseAuth.getInstance()
     private val database = FirebaseDatabase.getInstance().reference
     private val prefs = context.getSharedPreferences("bandpay_settings", Context.MODE_PRIVATE)
+    private val authPrefs = context.getSharedPreferences("bandpay_auth", Context.MODE_PRIVATE)
 
     private val _profile = MutableStateFlow(
         UserProfileUi(
@@ -284,6 +358,10 @@ class ProfileViewModel(context: Context) : ViewModel() {
         prefs.edit()
             .putString("band_name", current.bandName)
             .putString("currency", current.currency)
+            .putString("profile_name", current.name)
+            .putString("profile_phone", current.phone)
+            .putString("profile_instrument", current.instrument)
+            .putString("profile_photo_url", current.photoUrl)
             .apply()
 
         val uid = auth.currentUser?.uid
@@ -311,7 +389,22 @@ class ProfileViewModel(context: Context) : ViewModel() {
     }
 
     private fun observeUserProfile() {
-        val uid = auth.currentUser?.uid ?: return
+        val uid = auth.currentUser?.uid
+        if (uid == null) {
+            if (authPrefs.getString("last_login_type", "") == "local_admin") {
+                _profile.value = _profile.value.copy(
+                    name = prefs.getString("profile_name", "bomarty") ?: "bomarty",
+                    email = "bomarty28@gmail.com",
+                    phone = prefs.getString("profile_phone", "") ?: "",
+                    instrument = prefs.getString("profile_instrument", "Admin") ?: "Admin",
+                    role = "Admin",
+                    photoUrl = prefs.getString("profile_photo_url", "") ?: "",
+                    bandName = prefs.getString("band_name", "Banda Musical de Puno") ?: "Banda Musical de Puno",
+                    currency = prefs.getString("currency", "S/ PEN") ?: "S/ PEN"
+                )
+            }
+            return
+        }
         userListener?.let { listener ->
             observedUserId?.let { oldUid ->
                 database.child("users").child(oldUid).removeEventListener(listener)
@@ -361,21 +454,46 @@ class DashboardViewModel(private val repository: BandRepository) : ViewModel() {
     val activeMembersCount = repository.allMembers.map { it.size }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
     
     val commitments = repository.allCommitments.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    private val attendance = repository.allAttendance
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     
     val upcomingCommitments = commitments.map { list ->
         list.filter { !it.isCompleted }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val totalPaymentsPending = repository.allAttendance.map { list ->
+    val totalPaymentsPending = attendance.map { list ->
         list.filter { !it.isPaid }.sumOf { it.paymentAmount }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
-    val pendingPaymentsCount = repository.allAttendance.map { list ->
+    val pendingPaymentsCount = attendance.map { list ->
         list.filter { !it.isPaid }.size
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
-    val recentActivities = flowOf(emptyList<RecentActivity>())
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val pendingTasksCount = attendance.map { list ->
+        list.count { it.status.equals("Pendiente", ignoreCase = true) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    val completedCommitmentsCount = commitments.map { list -> list.count { it.isCompleted } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    val completionProgress = combine(commitments, completedCommitmentsCount) { list, completed ->
+        if (list.isEmpty()) 0f else completed.toFloat() / list.size
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
+
+    val nextCommitment = upcomingCommitments.map { it.firstOrNull() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val recentActivities = combine(commitments, attendance, activeMembersCount) { eventList, attendanceList, membersCount ->
+        buildList {
+            eventList.firstOrNull { it.isCompleted }?.let {
+                add(RecentActivity("Evento completado", it.title, "Actual", "check"))
+            }
+            attendanceList.firstOrNull { it.isPaid }?.let {
+                add(RecentActivity("Pago registrado", "Un pago fue marcado como recibido", "Actual", "payment"))
+            }
+            if (membersCount > 0) add(RecentActivity("Integrantes", "$membersCount integrantes registrados", "Actual", "user"))
+        }.take(3)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 }
 
 // 3. Commitments ViewModel
@@ -445,7 +563,36 @@ class CommitmentsViewModel(private val repository: BandRepository) : ViewModel()
 }
 
 // 4. Members ViewModel
-class MembersViewModel(private val repository: BandRepository) : ViewModel() {
+data class RegistrationRequest(
+    val id: String,
+    val name: String,
+    val email: String,
+    val phone: String,
+    val instrument: String
+)
+
+class MembersViewModel(
+    private val repository: BandRepository,
+    private val context: Context
+) : ViewModel() {
+    companion object {
+        private const val MEMBER_CREATION_APP = "member-creation"
+    }
+
+    private val memberAuth: FirebaseAuth by lazy {
+        val app = FirebaseApp.getApps(context).firstOrNull { it.name == MEMBER_CREATION_APP }
+            ?: requireNotNull(
+                FirebaseApp.initializeApp(
+                    context,
+                    FirebaseApp.getInstance().options,
+                    MEMBER_CREATION_APP
+                )
+            )
+        FirebaseAuth.getInstance(app)
+    }
+    private val memberDatabase by lazy {
+        FirebaseDatabase.getInstance(memberAuth.app).reference
+    }
     private val _searchQuery = MutableStateFlow("")
     val searchQuery = _searchQuery.asStateFlow()
 
@@ -454,9 +601,11 @@ class MembersViewModel(private val repository: BandRepository) : ViewModel() {
 
     // Form inputs
     val newMemberName = MutableStateFlow("")
+    val newMemberEmail = MutableStateFlow("")
     val newMemberCode = MutableStateFlow("")
     val newMemberPhone = MutableStateFlow("")
     val newMemberInstrument = MutableStateFlow("Seleccionar instrumento")
+    val newAccountRole = MutableStateFlow("Musico")
 
     private val _isAddedSuccess = MutableStateFlow(false)
     val isAddedSuccess = _isAddedSuccess.asStateFlow()
@@ -464,7 +613,46 @@ class MembersViewModel(private val repository: BandRepository) : ViewModel() {
     private val _lastInvitedEmail = MutableStateFlow("juan.nuevo@email.com")
     val lastInvitedEmail = _lastInvitedEmail.asStateFlow()
 
+    private val _addError = MutableStateFlow<String?>(null)
+    val addError = _addError.asStateFlow()
+
+    private val _pendingRequests = MutableStateFlow<List<RegistrationRequest>>(emptyList())
+    val pendingRequests = _pendingRequests.asStateFlow()
+
     val members = repository.allMembers.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    init {
+        FirebaseDatabase.getInstance().reference.child("registrationRequests")
+            .orderByChild("status").equalTo("pending")
+            .addValueEventListener(object : ValueEventListener {
+                override fun onDataChange(snapshot: DataSnapshot) {
+                    _pendingRequests.value = snapshot.children.mapNotNull { child ->
+                        child.key?.let { id ->
+                            RegistrationRequest(
+                                id = id,
+                                name = child.child("name").getValue(String::class.java).orEmpty(),
+                                email = child.child("email").getValue(String::class.java).orEmpty(),
+                                phone = child.child("phone").getValue(String::class.java).orEmpty(),
+                                instrument = child.child("instrument").getValue(String::class.java).orEmpty()
+                            )
+                        }
+                    }
+                }
+                override fun onCancelled(error: DatabaseError) { _addError.value = error.message }
+            })
+    }
+
+    fun approveRegistrationRequest(request: RegistrationRequest) {
+        FirebaseDatabase.getInstance().reference.child("registrationRequests").child(request.id)
+            .updateChildren(mapOf("status" to "approved", "reviewedAt" to ServerValue.TIMESTAMP))
+            .addOnFailureListener { error -> _addError.value = error.localizedMessage ?: "No se pudo aprobar" }
+    }
+
+    fun rejectRegistrationRequest(request: RegistrationRequest) {
+        FirebaseDatabase.getInstance().reference.child("registrationRequests").child(request.id)
+            .updateChildren(mapOf("status" to "rejected", "reviewedAt" to ServerValue.TIMESTAMP))
+            .addOnFailureListener { error -> _addError.value = error.localizedMessage ?: "No se pudo rechazar" }
+    }
 
     val filteredMembers = combine(members, searchQuery, selectedInstrument) { list, query, instrument ->
         list.filter { m ->
@@ -485,29 +673,86 @@ class MembersViewModel(private val repository: BandRepository) : ViewModel() {
     }
 
     fun addMember() {
-        if (newMemberName.value.isEmpty()) return
-        
+        val name = newMemberName.value.trim()
+        val email = newMemberEmail.value.trim()
+        val password = newMemberCode.value
+        val phone = newMemberPhone.value.trim()
+        val accountRole = newAccountRole.value
+        val firebaseRole = if (accountRole.equals("Admin", ignoreCase = true)) "admin" else "musico"
+
+        if (name.isEmpty() || email.isEmpty() || phone.isEmpty() || password.isEmpty()) {
+            _addError.value = "Completa nombre, correo, celular y contrasena"
+            return
+        }
+        if (password.length < 6) {
+            _addError.value = "La contrasena debe tener al menos 6 caracteres"
+            return
+        }
+
         val member = Member(
-            name = newMemberName.value,
-            code = if (newMemberCode.value.isEmpty()) "m123" else newMemberCode.value,
-            phone = if (newMemberPhone.value.isEmpty()) "987654321" else newMemberPhone.value,
-            instrument = if (newMemberInstrument.value == "Seleccionar instrumento") "Otros" else newMemberInstrument.value
+            name = name,
+            // La contraseña solo se envía a Firebase Auth; nunca se guarda en la base de datos.
+            code = "Cuenta Firebase",
+            phone = phone,
+            instrument = if (firebaseRole == "admin") {
+                "Admin"
+            } else if (newMemberInstrument.value == "Seleccionar instrumento") {
+                "Otros"
+            } else {
+                newMemberInstrument.value
+            }
         )
 
-        viewModelScope.launch {
-            runCatching {
-                repository.addMember(member)
-            }.onSuccess {
-                _lastInvitedEmail.value = "${member.name.replace(" ", "").lowercase()}@email.com"
-                _isAddedSuccess.value = true
-
-                // Reset
-                newMemberName.value = ""
-                newMemberCode.value = ""
-                newMemberPhone.value = ""
-                newMemberInstrument.value = "Seleccionar instrumento"
+        _addError.value = null
+        memberAuth.createUserWithEmailAndPassword(email, password)
+            .addOnSuccessListener { result ->
+                val uid = result.user?.uid ?: run {
+                    _addError.value = "No se pudo crear la cuenta"
+                    return@addOnSuccessListener
+                }
+                val profile = mapOf(
+                    "name" to name,
+                    "email" to email,
+                    "phone" to phone,
+                    "instrument" to member.instrument,
+                    "role" to firebaseRole,
+                    "biometricLoginEnabled" to false
+                )
+                memberDatabase.child("users").child(uid).setValue(profile)
+                    .addOnSuccessListener {
+                        if (firebaseRole == "admin") {
+                            finishAccountCreation(email)
+                        } else {
+                            val memberId = (System.currentTimeMillis() % Int.MAX_VALUE).toInt()
+                            val savedMember = member.copy(id = memberId)
+                            memberDatabase.child("members").child(memberId.toString()).setValue(savedMember)
+                                .addOnSuccessListener {
+                                        finishAccountCreation(email)
+                                }
+                                .addOnFailureListener { error ->
+                                    _addError.value = error.localizedMessage ?: "No se pudo guardar el integrante"
+                                }
+                        }
+                    }
+                    .addOnFailureListener { error ->
+                        _addError.value = error.localizedMessage ?: "No se pudo guardar el perfil"
+                    }
             }
-        }
+            .addOnFailureListener { error ->
+                _addError.value = error.localizedMessage ?: "No se pudo crear la cuenta"
+            }
+    }
+
+    private fun finishAccountCreation(email: String) {
+        memberAuth.signOut()
+        _lastInvitedEmail.value = email
+        _isAddedSuccess.value = true
+        newMemberName.value = ""
+        newMemberEmail.value = ""
+        newMemberCode.value = ""
+        newMemberPhone.value = ""
+        newMemberInstrument.value = "Seleccionar instrumento"
+        newAccountRole.value = "Musico"
     }
 
     fun resetSuccess() {

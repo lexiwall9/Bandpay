@@ -39,6 +39,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -78,17 +79,20 @@ fun LoginScreen(
     val loginError by viewModel.loginError.collectAsStateWithLifecycle()
     val canUseBiometricLogin by viewModel.canUseBiometricLogin.collectAsStateWithLifecycle()
     val savedLoginEmail by viewModel.savedLoginEmail.collectAsStateWithLifecycle()
+    val registrationRequestStatus by viewModel.registrationRequestStatus.collectAsStateWithLifecycle()
 
     var isRegisterMode by remember { mutableStateOf(false) }
     var isRegisterSuccess by remember { mutableStateOf(false) }
     var passwordVisible by remember { mutableStateOf(false) }
     var autoBiometricPromptShown by remember { mutableStateOf(false) }
+    var isUsingAnotherAccount by remember { mutableStateOf(false) }
+    val savedRegistrationDraft = remember { viewModel.pendingRegistrationDraft() }
 
-    var regName by remember { mutableStateOf("") }
-    var regEmail by remember { mutableStateOf("") }
-    var regPhone by remember { mutableStateOf("") }
+    var regName by remember { mutableStateOf(savedRegistrationDraft.name) }
+    var regEmail by remember { mutableStateOf(savedRegistrationDraft.email) }
+    var regPhone by remember { mutableStateOf(savedRegistrationDraft.phone) }
     var regPassword by remember { mutableStateOf("") }
-    var regInstrument by remember { mutableStateOf("Seleccionar instrumento") }
+    var regInstrument by remember { mutableStateOf(savedRegistrationDraft.instrument) }
     var regInstrumentExpanded by remember { mutableStateOf(false) }
     val instrumentsList = listOf("Tarola", "Trompeta", "Baritono", "Platillo", "Clarinete", "Saxofon", "Otros")
 
@@ -96,11 +100,19 @@ fun LoginScreen(
         if (isLoggedIn) onLoginSuccess()
     }
 
-    LaunchedEffect(canUseBiometricLogin, savedLoginEmail, isRegisterMode) {
+    LaunchedEffect(registrationRequestStatus) {
+        if (registrationRequestStatus == "approved") {
+            isRegisterSuccess = false
+            isRegisterMode = true
+        }
+    }
+
+    LaunchedEffect(canUseBiometricLogin, savedLoginEmail, isRegisterMode, isUsingAnotherAccount) {
         if (
             canUseBiometricLogin &&
             savedLoginEmail.isNotBlank() &&
             !isRegisterMode &&
+            !isUsingAnotherAccount &&
             !autoBiometricPromptShown
         ) {
             autoBiometricPromptShown = true
@@ -130,6 +142,7 @@ fun LoginScreen(
                 instrument = regInstrument,
                 instrumentExpanded = regInstrumentExpanded,
                 instrumentsList = instrumentsList,
+                isApproved = registrationRequestStatus == "approved",
                 loginError = loginError,
                 onNameChange = { regName = it },
                 onEmailChange = { regEmail = it },
@@ -143,14 +156,15 @@ fun LoginScreen(
                 onBack = { isRegisterMode = false },
                 onLoginClick = { isRegisterMode = false },
                 onSubmit = {
-                    viewModel.registerMember(
-                        name = regName,
-                        email = regEmail,
-                        password = regPassword,
-                        phone = regPhone,
-                        instrument = regInstrument
-                    ) {
-                        isRegisterSuccess = true
+                    if (registrationRequestStatus == "approved") {
+                        viewModel.registerMember(regName, regEmail, regPassword, regPhone, regInstrument) {
+                            viewModel.clearRegistrationRequest()
+                            isRegisterSuccess = true
+                        }
+                    } else {
+                        viewModel.submitRegistrationRequest(regName, regEmail, regPhone, regInstrument) {
+                            isRegisterSuccess = true
+                        }
                     }
                 }
             )
@@ -161,11 +175,16 @@ fun LoginScreen(
                 passwordVisible = passwordVisible,
                 loginError = loginError,
                 canUseBiometricLogin = canUseBiometricLogin,
+                isUsingAnotherAccount = isUsingAnotherAccount,
                 onEmailChange = viewModel::onEmailChanged,
                 onPasswordChange = viewModel::onPasswordChanged,
                 onTogglePasswordVisibility = { passwordVisible = !passwordVisible },
                 onBiometricLogin = onBiometricLoginRequested,
                 onPasswordLogin = viewModel::loginWithPassword,
+                onUseAnotherAccount = {
+                    isUsingAnotherAccount = true
+                    viewModel.prepareForAnotherAccount()
+                },
                 onRegister = { isRegisterMode = true }
             )
         }
@@ -190,9 +209,9 @@ private fun RegisterSuccess(email: String, onAccept: () -> Unit) {
             Icon(Icons.Default.Check, contentDescription = null, tint = BrandPurple, modifier = Modifier.size(46.dp))
         }
         Spacer(modifier = Modifier.height(32.dp))
-        Text("Registro exitoso", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = TextDark, textAlign = TextAlign.Center)
+        Text("Solicitud enviada", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = TextDark, textAlign = TextAlign.Center)
         Spacer(modifier = Modifier.height(12.dp))
-        Text("Tu cuenta fue creada en Firebase con:", fontSize = 14.sp, color = TextGray, textAlign = TextAlign.Center)
+        Text("El administrador revisará tu solicitud para:", fontSize = 14.sp, color = TextGray, textAlign = TextAlign.Center)
         Spacer(modifier = Modifier.height(4.dp))
         Text(email, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = BrandPurple, textAlign = TextAlign.Center)
         Spacer(modifier = Modifier.height(40.dp))
@@ -220,6 +239,7 @@ private fun RegisterForm(
     instrument: String,
     instrumentExpanded: Boolean,
     instrumentsList: List<String>,
+    isApproved: Boolean,
     loginError: String?,
     onNameChange: (String) -> Unit,
     onEmailChange: (String) -> Unit,
@@ -255,7 +275,6 @@ private fun RegisterForm(
         LoginTextField(name, onNameChange, "Nombres", "Ingresa nombres", Icons.Outlined.Person, "reg_name_input")
         LoginTextField(email, onEmailChange, "Email", "ejemplo@bandaspuno.com", Icons.Outlined.Email, "reg_email_input")
         LoginTextField(phone, onPhoneChange, "Celular", "+51 987 654 321", Icons.Outlined.Phone, "reg_phone_input", KeyboardType.Phone)
-        LoginTextField(password, onPasswordChange, "Contrasena", "Ingresa tu clave", Icons.Outlined.Lock, "reg_password_input", visualTransformation = PasswordVisualTransformation())
 
         ExposedDropdownMenuBox(
             expanded = instrumentExpanded,
@@ -288,9 +307,14 @@ private fun RegisterForm(
 
         ErrorText(loginError)
 
+        if (isApproved) {
+            Text("Solicitud aprobada: crea tu contrasena para activar la cuenta.", color = BrandPurple, fontSize = 14.sp)
+            LoginTextField(password, onPasswordChange, "Contrasena", "Minimo 6 caracteres", Icons.Outlined.Lock, "reg_password_input", visualTransformation = PasswordVisualTransformation())
+        }
+
         Button(
             onClick = onSubmit,
-            enabled = name.isNotEmpty() && email.isNotEmpty() && phone.isNotEmpty() && password.isNotEmpty() && instrument != "Seleccionar instrumento",
+            enabled = name.isNotEmpty() && email.isNotEmpty() && phone.isNotEmpty() && instrument != "Seleccionar instrumento" && (!isApproved || password.isNotEmpty()),
             modifier = Modifier
                 .fillMaxWidth()
                 .height(50.dp)
@@ -298,7 +322,7 @@ private fun RegisterForm(
             shape = RoundedCornerShape(12.dp),
             colors = ButtonDefaults.buttonColors(containerColor = BrandPurple)
         ) {
-            Text("Registrarse", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            Text(if (isApproved) "Crear cuenta" else "Enviar solicitud", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
         }
 
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
@@ -322,14 +346,16 @@ private fun PasswordLogin(
     passwordVisible: Boolean,
     loginError: String?,
     canUseBiometricLogin: Boolean,
+    isUsingAnotherAccount: Boolean,
     onEmailChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
     onTogglePasswordVisibility: () -> Unit,
     onBiometricLogin: () -> Unit,
     onPasswordLogin: () -> Unit,
+    onUseAnotherAccount: () -> Unit,
     onRegister: () -> Unit
 ) {
-    val hasSavedEmail = savedEmail.isNotBlank()
+    val hasSavedEmail = savedEmail.isNotBlank() && !isUsingAnotherAccount
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -354,8 +380,11 @@ private fun PasswordLogin(
         if (hasSavedEmail) {
             Text("Cuenta guardada", fontSize = 13.sp, color = TextGray)
             Text(savedEmail, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = BrandPurple, textAlign = TextAlign.Center)
+            TextButton(onClick = onUseAnotherAccount) {
+                Text("Ingresar con otra cuenta", color = BrandPurple)
+            }
         } else {
-            LoginTextField(email, onEmailChange, "Email", "admin@bandaspuno.com", Icons.Outlined.Email, "email_input")
+            LoginTextField(email, onEmailChange, "Email", "", Icons.Outlined.Email, "email_input")
         }
         Spacer(modifier = Modifier.height(16.dp))
         LoginTextField(

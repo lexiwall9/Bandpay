@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -79,7 +80,7 @@ class MainActivity : FragmentActivity() {
                     modelClass.isAssignableFrom(LoginViewModel::class.java) -> LoginViewModel(repository, applicationContext) as T
                     modelClass.isAssignableFrom(DashboardViewModel::class.java) -> DashboardViewModel(repository) as T
                     modelClass.isAssignableFrom(CommitmentsViewModel::class.java) -> CommitmentsViewModel(repository) as T
-                    modelClass.isAssignableFrom(MembersViewModel::class.java) -> MembersViewModel(repository) as T
+                    modelClass.isAssignableFrom(MembersViewModel::class.java) -> MembersViewModel(repository, applicationContext) as T
                     modelClass.isAssignableFrom(PaymentDetailViewModel::class.java) -> PaymentDetailViewModel(repository) as T
                     modelClass.isAssignableFrom(ProfileViewModel::class.java) -> ProfileViewModel(applicationContext) as T
                     else -> throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
@@ -244,17 +245,18 @@ fun MainAppShell(
     val navBackStackEntry by shellNavController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route ?: "dashboard"
     val profile by profileViewModel.profile.collectAsState()
+    val isAdmin = profile.role.equals("admin", ignoreCase = true)
     var showProfileDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         profileViewModel.refresh()
     }
 
-    val items = listOf(
-        NavigationItem("dashboard", "Inicio", Icons.Default.Dashboard),
-        NavigationItem("commitments", "Eventos", Icons.Default.EventNote),
-        NavigationItem("members", "Integrantes", Icons.Default.People)
-    )
+    val items = buildList {
+        add(NavigationItem("dashboard", "Inicio", Icons.Default.Dashboard))
+        add(NavigationItem("commitments", "Eventos", Icons.Default.EventNote))
+        if (isAdmin) add(NavigationItem("members", "Integrantes", Icons.Default.People))
+    }
 
     Scaffold(
         contentWindowInsets = WindowInsets(0.dp),
@@ -263,6 +265,9 @@ fun MainAppShell(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(86.dp)
+                    // Mantiene la barra de la app por encima de la navegación de
+                    // tres botones y también se adapta al modo por gestos.
+                    .navigationBarsPadding()
                     .testTag("bottom_nav_bar"),
                 contentAlignment = Alignment.BottomCenter
             ) {
@@ -313,6 +318,7 @@ fun MainAppShell(
                 DashboardScreen(
                     viewModel = dashboardViewModel,
                     userName = profile.name,
+                    photoUrl = profile.photoUrl,
                     onNavigateToCommitments = {
                         shellNavController.navigate("commitments") {
                             launchSingleTop = true
@@ -326,9 +332,12 @@ fun MainAppShell(
             composable("commitments") {
                 CommitmentsScreen(
                     viewModel = commitmentsViewModel,
+                    canManageCommitments = isAdmin,
                     onNavigateToDetail = { commitmentId ->
-                        // Navigate up to parent NavHost detail destination
-                        navController.navigate("detail/$commitmentId")
+                        if (isAdmin) {
+                            // Los detalles de pago y asistencia son exclusivos del administrador.
+                            navController.navigate("detail/$commitmentId")
+                        }
                     }
                 )
             }
@@ -354,6 +363,7 @@ fun MainAppShell(
                 ) {
                     ProfileScreen(
                         viewModel = profileViewModel,
+                        isAdmin = isAdmin,
                         onClose = { showProfileDialog = false },
                         onLogout = {
                             showProfileDialog = false
