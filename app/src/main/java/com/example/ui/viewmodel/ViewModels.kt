@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.*
+import com.example.notifications.AdminNotificationManager
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.FirebaseApp
@@ -618,6 +619,7 @@ class MembersViewModel(
 
     private val _pendingRequests = MutableStateFlow<List<RegistrationRequest>>(emptyList())
     val pendingRequests = _pendingRequests.asStateFlow()
+    private val notificationPrefs = context.getSharedPreferences("bandpay_notifications", Context.MODE_PRIVATE)
 
     val members = repository.allMembers.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -626,7 +628,7 @@ class MembersViewModel(
             .orderByChild("status").equalTo("pending")
             .addValueEventListener(object : ValueEventListener {
                 override fun onDataChange(snapshot: DataSnapshot) {
-                    _pendingRequests.value = snapshot.children.mapNotNull { child ->
+                    val requests = snapshot.children.mapNotNull { child ->
                         child.key?.let { id ->
                             RegistrationRequest(
                                 id = id,
@@ -637,9 +639,42 @@ class MembersViewModel(
                             )
                         }
                     }
+                    val notifiedIds = notificationPrefs.getStringSet("notified_request_ids", emptySet()).orEmpty()
+                    val newRequests = requests.filter { it.id !in notifiedIds }
+                    notifyAdministrator(newRequests, notifiedIds)
+                    _pendingRequests.value = requests
                 }
                 override fun onCancelled(error: DatabaseError) { _addError.value = error.message }
             })
+    }
+
+    private fun isLocalAdmin(): Boolean =
+        context.getSharedPreferences("bandpay_auth", Context.MODE_PRIVATE)
+            .getString("last_login_type", "") == "local_admin"
+
+    private fun notifyAdministrator(
+        requests: List<RegistrationRequest>,
+        notifiedIds: Set<String>
+    ) {
+        if (requests.isEmpty()) return
+
+        fun notify() {
+            requests.forEach { AdminNotificationManager.showRegistrationRequest(context, it.name) }
+            notificationPrefs.edit()
+                .putStringSet("notified_request_ids", notifiedIds + requests.map { it.id })
+                .apply()
+        }
+
+        if (isLocalAdmin()) {
+            notify()
+            return
+        }
+
+        val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return
+        FirebaseDatabase.getInstance().reference.child("users").child(uid).child("role").get()
+            .addOnSuccessListener { role ->
+                if (role.getValue(String::class.java).equals("admin", ignoreCase = true)) notify()
+            }
     }
 
     fun approveRegistrationRequest(request: RegistrationRequest) {
