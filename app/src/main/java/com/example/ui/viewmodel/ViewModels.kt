@@ -129,25 +129,48 @@ class LoginViewModel(
     }
 
     private fun loginAsLocalAdmin() {
-        auth.signOut()
-        _loginError.value = null
-        rememberLoginEmail(localAdminEmail)
-        rememberLoginType("local_admin")
-        enableBiometricForThisDevice()
-        _isLoggedIn.value = true
+        fun finishLogin() {
+            _loginError.value = null
+            rememberLoginEmail(localAdminEmail)
+            rememberLoginType("local_admin")
+            enableBiometricForThisDevice()
+            _isLoggedIn.value = true
+        }
+
+        if (auth.currentUser == null) {
+            auth.signInAnonymously()
+                .addOnSuccessListener { finishLogin() }
+                .addOnFailureListener { error ->
+                    _loginError.value = error.localizedMessage ?: "No se pudo iniciar la sesión de administrador"
+                }
+        } else {
+            finishLogin()
+        }
     }
 
     fun loginWithFingerprint() {
         val isLocalAdmin = prefs.getString("last_login_type", "") == "local_admin" &&
                 _savedLoginEmail.value.equals(localAdminEmail, ignoreCase = true)
         if (_canUseBiometricLogin.value && (auth.currentUser != null || isLocalAdmin)) {
-            _loginError.value = null
-            if (isLocalAdmin) {
-                rememberLoginEmail(localAdminEmail)
-                rememberLoginType("local_admin")
+            fun finishLogin() {
+                _loginError.value = null
+                if (isLocalAdmin) {
+                    rememberLoginEmail(localAdminEmail)
+                    rememberLoginType("local_admin")
+                }
+                _isLoggedIn.value = true
+                _showFingerprintDialog.value = false
             }
-            _isLoggedIn.value = true
-            _showFingerprintDialog.value = false
+
+            if (isLocalAdmin && auth.currentUser == null) {
+                auth.signInAnonymously()
+                    .addOnSuccessListener { finishLogin() }
+                    .addOnFailureListener { error ->
+                        _loginError.value = error.localizedMessage ?: "No se pudo conectar con Firebase"
+                    }
+            } else {
+                finishLogin()
+            }
         } else {
             _loginError.value = "Primero inicia sesion con contrasena en este celular"
         }
@@ -239,27 +262,40 @@ class LoginViewModel(
             _loginError.value = "Completa nombre, correo, celular e instrumento"
             return
         }
-        val request = mapOf(
-            "name" to name.trim(), "email" to email.trim(), "phone" to phone.trim(),
-            "instrument" to instrument, "status" to "pending", "createdAt" to ServerValue.TIMESTAMP
-        )
-        val reference = database.child("registrationRequests").push()
-        reference.setValue(request)
-            .addOnSuccessListener {
-                prefs.edit()
-                    .putString("registration_request_id", reference.key)
-                    .putString("registration_name", name.trim())
-                    .putString("registration_email", email.trim())
-                    .putString("registration_phone", phone.trim())
-                    .putString("registration_instrument", instrument)
-                    .apply()
-                observeRegistrationRequest(reference.key)
-                _loginError.value = null
-                onComplete()
-            }
-            .addOnFailureListener { error ->
-                _loginError.value = error.localizedMessage ?: "No se pudo enviar la solicitud"
-            }
+        fun saveRequest() {
+            val request = mapOf(
+                "name" to name.trim(), "email" to email.trim(), "phone" to phone.trim(),
+                "instrument" to instrument, "status" to "pending", "createdAt" to ServerValue.TIMESTAMP,
+                "requesterId" to auth.currentUser?.uid.orEmpty()
+            )
+            val reference = database.child("registrationRequests").push()
+            reference.setValue(request)
+                .addOnSuccessListener {
+                    prefs.edit()
+                        .putString("registration_request_id", reference.key)
+                        .putString("registration_name", name.trim())
+                        .putString("registration_email", email.trim())
+                        .putString("registration_phone", phone.trim())
+                        .putString("registration_instrument", instrument)
+                        .apply()
+                    observeRegistrationRequest(reference.key)
+                    _loginError.value = null
+                    onComplete()
+                }
+                .addOnFailureListener { error ->
+                    _loginError.value = error.localizedMessage ?: "No se pudo enviar la solicitud"
+                }
+        }
+
+        if (auth.currentUser == null) {
+            auth.signInAnonymously()
+                .addOnSuccessListener { saveRequest() }
+                .addOnFailureListener { error ->
+                    _loginError.value = error.localizedMessage ?: "No se pudo iniciar la solicitud"
+                }
+        } else {
+            saveRequest()
+        }
     }
 
     private fun observeRegistrationRequest(requestId: String?) {
